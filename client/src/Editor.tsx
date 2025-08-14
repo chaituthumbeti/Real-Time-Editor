@@ -16,7 +16,7 @@ const Editor = () => {
 
     // Create the initial state of the editor
     const startState = EditorState.create({
-      doc: 'console.log("Hello, CodeMirror!");', 
+      doc: 'console.log("Hello, Chaitanya!");', 
       extensions: [
         keymap.of(defaultKeymap), // Standard keyboard shortcuts
         javascript(),             // Enable JavaScript language support
