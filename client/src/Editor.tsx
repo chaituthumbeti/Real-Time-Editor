@@ -4,30 +4,34 @@ import { EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { defaultKeymap } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
+import * as Y from 'yjs';
+import { WebrtcProvider } from 'y-webrtc';
+import { yCollab } from 'y-codemirror.next';
 
-// Define the props for our component
-interface EditorProps {
-  onDocChange: (doc: string) => void;
-}
+// 1. Create a Yjs document
+const ydoc = new Y.Doc();
 
-const Editor = ({ onDocChange }: EditorProps) => {
+// 2. Create a "provider" to sync the document over the network.
+// We're using a WebRTC provider here which is great for peer-to-peer connections.
+// 'my-collaboration-room' can be any unique name for your document.
+const provider = new WebrtcProvider('my-collaboration-room', ydoc);
+
+const Editor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!editorRef.current) return;
 
+    // 3. Get the shared text type from the Yjs document
+    const ytext = ydoc.getText('codemirror');
+
     const startState = EditorState.create({
-      doc: 'console.log("Hello, World!");',
+      doc: ytext.toString(),
       extensions: [
         keymap.of(defaultKeymap),
         javascript(),
-        // Add a listener that fires on every update
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            // When the document changes, call the function from props
-            onDocChange(update.state.doc.toString());
-          }
-        }),
+        // 4. Add the Yjs collaboration plugin
+        yCollab(ytext, provider.awareness),
       ],
     });
 
@@ -39,7 +43,7 @@ const Editor = ({ onDocChange }: EditorProps) => {
     return () => {
       view.destroy();
     };
-  }, [onDocChange]); // Add onDocChange to the dependency array
+  }, []);
 
   return <div className="h-full" ref={editorRef} />;
 };

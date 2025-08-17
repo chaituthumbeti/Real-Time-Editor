@@ -1,36 +1,34 @@
+//const socket = io('https://real-time-editor-server-h96u.onrender.com/', {
+//   transports: ['websocket'],
+  
+// });
+// src/App.tsx
 import { useEffect } from 'react';
 import io from 'socket.io-client';
 import Editor from './Editor';
 
-const socket = io('https://real-time-editor-server-h96u.onrender.com/', {
-  transports: ['websocket'],
-  
-});
+const socket = io('http://localhost:3001', { transports: ['websocket'] });
 
 function App() {
-
   useEffect(() => {
-    
     socket.on('connect', () => {
-      console.log('SUCCESS: Connected to server with ID:', socket.id);
+      console.log('✅ SUCCESS: Connected to server with ID:', socket.id);
     });
+
     socket.on('connect_error', (err) => {
-      console.error(' ERROR: Connection failed:', err.message);
+      console.error('❌ ERROR: Connection failed:', err.message);
     });
 
     socket.on('disconnect', (reason) => {
-      console.warn('WARN: Disconnected from server:', reason);
+      console.warn('⚠️ WARN: Disconnected from server:', reason);
     });
+
     return () => {
       socket.off('connect');
       socket.off('connect_error');
       socket.off('disconnect');
     };
   }, []);
-
-  const handleDocChange = (doc: string) => {
-    socket.emit('doc-change', doc);
-  };
 
   return (
     <main className="h-screen bg-gray-800 text-white">
@@ -39,7 +37,8 @@ function App() {
       </header>
 
       <div className="h-[calc(100vh-64px)]">
-        <Editor onDocChange={handleDocChange}/>
+        {/* The Editor component no longer needs any props */}
+        <Editor />
       </div>
     </main>
   );
