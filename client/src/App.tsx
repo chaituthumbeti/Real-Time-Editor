@@ -3,33 +3,9 @@
   
 // });
 // src/App.tsx
-import { useEffect } from 'react';
-import io from 'socket.io-client';
 import Editor from './Editor';
 
-const socket = io('http://localhost:3001', { transports: ['websocket'] });
-
 function App() {
-  useEffect(() => {
-    socket.on('connect', () => {
-      console.log('✅ SUCCESS: Connected to server with ID:', socket.id);
-    });
-
-    socket.on('connect_error', (err) => {
-      console.error('❌ ERROR: Connection failed:', err.message);
-    });
-
-    socket.on('disconnect', (reason) => {
-      console.warn('⚠️ WARN: Disconnected from server:', reason);
-    });
-
-    return () => {
-      socket.off('connect');
-      socket.off('connect_error');
-      socket.off('disconnect');
-    };
-  }, []);
-
   return (
     <main className="h-screen bg-gray-800 text-white">
       <header className="bg-gray-900 p-4 shadow-md">
@@ -37,7 +13,6 @@ function App() {
       </header>
 
       <div className="h-[calc(100vh-64px)]">
-        {/* The Editor component no longer needs any props */}
         <Editor />
       </div>
     </main>
