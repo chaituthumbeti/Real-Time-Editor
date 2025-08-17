@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import io from 'socket.io-client';
 import Editor from './Editor';
 
-const socket = io('http://localhost:3001', {
+const socket = io('https://real-time-editor-server-h96u.onrender.com/', {
   transports: ['websocket'],
   
 });
@@ -12,16 +12,15 @@ function App() {
   useEffect(() => {
     
     socket.on('connect', () => {
-      console.log('✅ SUCCESS: Connected to server with ID:', socket.id);
+      console.log('SUCCESS: Connected to server with ID:', socket.id);
     });
     socket.on('connect_error', (err) => {
       console.error(' ERROR: Connection failed:', err.message);
     });
 
     socket.on('disconnect', (reason) => {
-      console.warn('⚠️ WARN: Disconnected from server:', reason);
+      console.warn('WARN: Disconnected from server:', reason);
     });
-
     return () => {
       socket.off('connect');
       socket.off('connect_error');
