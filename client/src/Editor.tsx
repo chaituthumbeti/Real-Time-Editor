@@ -7,45 +7,66 @@ import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { oneDark } from "@codemirror/theme-one-dark";
-//import { highlightingFor } from "@codemirror/language";
-//import { tags } from "@lezer/highlight";
+import { supabase } from "./supabaseClient";
 
-const serverURL = import.meta.env.VITE_SERVER_URL;
-const ydoc = new Y.Doc();
-const provider = new WebsocketProvider(
-  serverURL,
-  window.location.pathname,
-  ydoc
-);
-
+const serverURL = import.meta.env.VITE_SERVER_URL || "ws://localhost:3001";
 const niceColors = [
-  "#3498db",
-  "#2ecc71",
-  "#e74c3c",
-  "#f1c40f",
-  "#9b59b6",
-  "#1abc9c",
-  "#e67e22",
+  "#8b5cf6",
+  "#6366f1",
+  "#ec4899",
+  "#f43f5e",
+  "#06b6d4",
+  "#10b981",
+  "#f59e0b",
 ];
-const userColor = niceColors[Math.floor(Math.random() * niceColors.length)];
 
-provider.awareness.setLocalStateField("user", {
-  name: "User " + Math.floor(Math.random() * 100),
-  color: userColor,
-});
+interface StatusEvent {
+  status: "connecting" | "connected" | "disconnected";
+}
 
-const myTheme = EditorView.theme({
-  ".cm-string": { color: "#98c379" },
-});
+interface EditorProps {
+  onConnectionStatusChange?: (
+    status: "connecting" | "connected" | "disconnected"
+  ) => void;
+}
 
-const Editor = () => {
+const Editor = ({ onConnectionStatusChange }: EditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!editorRef.current) return;
 
-    const ytext = ydoc.getText("codemirror");
+    const ydoc = new Y.Doc();
+    const provider = new WebsocketProvider(
+      serverURL,
+      window.location.pathname,
+      ydoc
+    );
 
+    const setupAwareness = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        const userColor =
+          niceColors[Math.floor(Math.random() * niceColors.length)];
+        provider.awareness.setLocalStateField("user", {
+          name: session.user.email || "Anonymous",
+          color: userColor,
+        });
+      }
+    };
+
+    setupAwareness();
+
+    // Listen for connection status changes
+    provider.on("status", (event: StatusEvent) => {
+      if (onConnectionStatusChange) {
+        onConnectionStatusChange(event.status);
+      }
+    });
+
+    const ytext = ydoc.getText("codemirror");
     const startState = EditorState.create({
       doc: ytext.toString(),
       extensions: [
@@ -53,7 +74,36 @@ const Editor = () => {
         javascript(),
         yCollab(ytext, provider.awareness),
         oneDark,
-        myTheme,
+        EditorView.theme({
+          "&": {
+            fontSize: "14px",
+            backgroundColor: "#0f172a",
+            color: "#e2e8f0",
+            height: "100%",
+          },
+          ".cm-scroller": {
+            overflow: "auto",
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+          },
+          ".cm-content": {
+            caretColor: "#a5b4fc",
+            padding: "16px",
+          },
+          ".cm-cursor": {
+            borderLeftColor: "#a5b4fc",
+          },
+          ".cm-selectionBackground": {
+            backgroundColor: "#334155",
+          },
+          ".cm-line": {
+            padding: "0 4px",
+          },
+          ".cm-string": { color: "#a5b4fc" },
+          ".cm-keyword": { color: "#c084fc" },
+          ".cm-atom": { color: "#f472b6" },
+          ".cm-number": { color: "#fbbf24" },
+          ".cm-comment": { color: "#64748b", fontStyle: "italic" },
+        }),
       ],
     });
 
@@ -63,11 +113,13 @@ const Editor = () => {
     });
 
     return () => {
+      provider.destroy();
+      ydoc.destroy();
       view.destroy();
     };
-  }, []);
+  }, [onConnectionStatusChange]);
 
-  return <div className="h-full" ref={editorRef} />;
+  return <div className="flex-1" ref={editorRef} />;
 };
 
 export default Editor;

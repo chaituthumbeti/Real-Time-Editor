@@ -1,21 +1,47 @@
-//const socket = io('https://real-time-editor-server-h96u.onrender.com/', {
-//   transports: ['websocket'],
-  
-// });
-// src/App.tsx
-import Editor from './Editor';
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
+import type { Session } from "@supabase/supabase-js";
+import AuthPage from "./pages/AuthPage";
+import EditorPage from "./pages/EditorPage";
 
 function App() {
-  return (
-    <main className="h-screen bg-gray-800 text-white">
-      <header className="bg-gray-900 p-4 shadow-md">
-        <h1 className="text-xl font-bold">Real-Time Code Editor</h1>
-      </header>
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
-      <div className="h-[calc(100vh-64px)]">
-        <Editor />
+  useEffect(() => {
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setSession(session);
+      setLoading(false);
+    };
+
+    checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+        </div>
       </div>
-    </main>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-900">
+      {!session ? <AuthPage /> : <EditorPage session={session} />}
+    </div>
   );
 }
 
