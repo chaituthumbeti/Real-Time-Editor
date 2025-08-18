@@ -1,20 +1,20 @@
-// src/Editor.tsx
 import { useEffect, useRef } from 'react';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { defaultKeymap } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import * as Y from 'yjs';
-import { WebrtcProvider } from 'y-webrtc';
+import { WebsocketProvider } from 'y-websocket'; 
 import { yCollab } from 'y-codemirror.next';
 
-// 1. Create a Yjs document
+// 2. Get the server URL from the environment variable
+const serverURL = import.meta.env.VITE_SERVER_URL;
+
 const ydoc = new Y.Doc();
 
-// 2. Create a "provider" to sync the document over the network.
-// We're using a WebRTC provider here which is great for peer-to-peer connections.
-// 'my-collaboration-room' can be any unique name for your document.
-const provider = new WebrtcProvider('my-collaboration-room', ydoc);
+// 3. Connect to your server using the WebsocketProvider
+//    The room name can be 'my-collaboration-room' for now.
+const provider = new WebsocketProvider(serverURL, 'my-collaboration-room', ydoc);
 
 const Editor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -22,7 +22,6 @@ const Editor = () => {
   useEffect(() => {
     if (!editorRef.current) return;
 
-    // 3. Get the shared text type from the Yjs document
     const ytext = ydoc.getText('codemirror');
 
     const startState = EditorState.create({
@@ -30,7 +29,7 @@ const Editor = () => {
       extensions: [
         keymap.of(defaultKeymap),
         javascript(),
-        // 4. Add the Yjs collaboration plugin
+        // 4. The yCollab part remains the same
         yCollab(ytext, provider.awareness),
       ],
     });

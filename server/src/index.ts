@@ -1,33 +1,22 @@
 import express from 'express';
 import http from 'http';
-import { Server } from 'socket.io';
 import cors from 'cors';
+import { WebSocketServer } from 'ws';
+// @ts-ignore
+import { setupWSConnection } from 'y-websocket/bin/utils';
 
 const app = express();
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
+
 const server = http.createServer(app);
+const PORT = process.env.PORT || 3001;
 
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"]
-  },
-  transports: ['polling', 'websocket'] 
-});
+const wss = new WebSocketServer({ server });
 
-const PORT = 3001;
-
-app.get('/health', (req, res) => {
-  res.send('Server is healthy!');
-});
-
-io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
+wss.on('connection', (conn, req) => {
+  setupWSConnection(conn, req);
 });
 
 server.listen(PORT, () => {
-  console.log(`Server is listening on port ${PORT}`);
+  console.log(`✅ Server is listening on port ${PORT}`);
 });
