@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
@@ -22,7 +22,6 @@ const niceColors = [
   "#f59e0b",
 ];
 
-// 1. Define the type for the event object
 interface StatusEvent {
   status: "connecting" | "connected" | "disconnected";
 }
@@ -36,6 +35,18 @@ interface EditorProps {
 const Editor = ({ onConnectionStatusChange }: EditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const { docId } = useParams<{ docId: string }>();
+
+  const saveDocument = useCallback(
+    debounce(async (doc: Y.Doc) => {
+      if (!docId) return;
+      const content = Y.encodeStateAsUpdate(doc);
+      await supabase
+        .from("documents")
+        .update({ content: Array.from(content) })
+        .eq("id", docId);
+    }, 2000),
+    [docId]
+  );
 
   useEffect(() => {
     if (!editorRef.current || !docId) return;
@@ -59,7 +70,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
         ydoc
       );
 
-      // 2. Use the new StatusEvent type here instead of 'any'
       provider.on("status", (event: StatusEvent) => {
         if (onConnectionStatusChange) onConnectionStatusChange(event.status);
       });
@@ -79,22 +89,22 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
 
       if (error) console.error("Error fetching document:", error);
 
-      if (docData?.content) {
-        Y.applyUpdate(ydoc, new Uint8Array(docData.content));
+      if (
+        docData?.content &&
+        Array.isArray(docData.content) &&
+        docData.content.length > 0
+      ) {
+        try {
+          Y.applyUpdate(ydoc, new Uint8Array(docData.content));
+        } catch (e) {
+          console.error("Failed to apply update from DB:", e);
+        }
       }
 
       const ytext = ydoc.getText("codemirror");
 
-      const saveDocument = debounce(async () => {
-        const content = Y.encodeStateAsUpdate(ydoc);
-        await supabase
-          .from("documents")
-          .update({ content: Array.from(content) })
-          .eq("id", docId);
-      }, 2000);
-
-      ydoc.on("update", (_update, origin) => {
-        if (origin !== provider) saveDocument();
+      ydoc.on("update", (update, origin) => {
+        if (origin !== provider) saveDocument(ydoc);
       });
 
       const startState = EditorState.create({
@@ -120,7 +130,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
       view?.destroy();
       ydoc.destroy();
     };
-  }, [docId, onConnectionStatusChange]);
+  }, [docId, onConnectionStatusChange, saveDocument]);
 
   return <div className="h-full flex-1" ref={editorRef} />;
 };
