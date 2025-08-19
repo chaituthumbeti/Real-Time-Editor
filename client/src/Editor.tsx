@@ -103,7 +103,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
 
       const ytext = ydoc.getText("codemirror");
 
-      ydoc.on("update", (update, origin) => {
+      ydoc.on("update", (_update, origin) => {
         if (origin !== provider) saveDocument(ydoc);
       });
 
