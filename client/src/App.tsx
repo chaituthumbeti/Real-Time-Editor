@@ -2,8 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 import AuthPage from "./pages/AuthPage";
-import EditorPage from "./pages/EditorPage";
-
+import DashboardPage from "./pages/DashboardPage";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +39,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-900">
-      {!session ? <AuthPage /> : <EditorPage session={session} />}
+      {!session ? <AuthPage /> : <DashboardPage session={session} />}
     </div>
   );
 }

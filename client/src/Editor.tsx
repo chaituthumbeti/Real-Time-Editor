@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
@@ -8,6 +8,8 @@ import { WebsocketProvider } from "y-websocket";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { supabase } from "./supabaseClient";
+import { useParams } from "react-router-dom";
+import debounce from "lodash.debounce";
 
 const serverURL = import.meta.env.VITE_SERVER_URL || "ws://localhost:3001";
 const niceColors = [
@@ -32,40 +34,58 @@ interface EditorProps {
 
 const Editor = ({ onConnectionStatusChange }: EditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  const { docId } = useParams<{ docId: string }>();
+  const [view, setView] = useState<EditorView | null>(null);
+  const ydocRef = useRef<Y.Doc | null>(null);
+  const providerRef = useRef<WebsocketProvider | null>(null);
+
+  // Create the save function with debounce
+  const saveDocument = useCallback(
+    debounce(async (doc: Y.Doc) => {
+      if (!docId) return;
+
+      // Convert the Yjs document to a binary format for saving
+      const content = Y.encodeStateAsUpdate(doc);
+      const { error } = await supabase
+        .from("documents")
+        .update({ content: Array.from(content) }) // Save as an array of numbers
+        .eq("id", docId);
+
+      if (error) {
+        console.error("Error saving document:", error);
+      } else {
+        console.log("Document saved successfully!");
+      }
+    }, 2000), // Save 2 seconds after the user stops typing
+    [docId]
+  );
 
   useEffect(() => {
-    if (!editorRef.current) return;
+    if (!editorRef.current || !docId) return;
 
+    // Clean up previous instances
+    if (ydocRef.current) {
+      ydocRef.current.destroy();
+      ydocRef.current = null;
+    }
+
+    if (providerRef.current) {
+      providerRef.current.destroy();
+      providerRef.current = null;
+    }
+
+    if (view) {
+      view.destroy();
+    }
+
+    // Create new Y.Doc and provider
     const ydoc = new Y.Doc();
-    const provider = new WebsocketProvider(
-      serverURL,
-      window.location.pathname,
-      ydoc
-    );
+    ydocRef.current = ydoc;
 
-    const setupAwareness = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
-        const userColor =
-          niceColors[Math.floor(Math.random() * niceColors.length)];
-        provider.awareness.setLocalStateField("user", {
-          name: session.user.email || "Anonymous",
-          color: userColor,
-        });
-      }
-    };
+    const provider = new WebsocketProvider(serverURL, docId, ydoc);
+    providerRef.current = provider;
 
-    setupAwareness();
-
-    // Listen for connection status changes
-    provider.on("status", (event: StatusEvent) => {
-      if (onConnectionStatusChange) {
-        onConnectionStatusChange(event.status);
-      }
-    });
-
+    // Create the editor immediately
     const ytext = ydoc.getText("codemirror");
     const startState = EditorState.create({
       doc: ytext.toString(),
@@ -107,24 +127,95 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
       ],
     });
 
-    const view = new EditorView({
+    const editorView = new EditorView({
       state: startState,
       parent: editorRef.current,
     });
 
+    setView(editorView);
+
+    // Now fetch and apply the initial content
+    const fetchInitialContent = async () => {
+      console.log("Fetching document content for ID:", docId);
+      const { data, error } = await supabase
+        .from("documents")
+        .select("content")
+        .eq("id", docId)
+        .single();
+
+      if (error) {
+        console.error("Error fetching document:", error);
+        return;
+      }
+
+      console.log("Fetched document data:", data);
+
+      if (data && data.content && Array.isArray(data.content)) {
+        console.log("Applying initial content to Yjs document");
+        // Apply the saved content to the Yjs document
+        try {
+          Y.applyUpdate(ydoc, new Uint8Array(data.content));
+          console.log("Content applied successfully");
+        } catch (e) {
+          console.error("Error applying content:", e);
+        }
+      } else {
+        console.log("No content found in database or invalid format");
+      }
+    };
+
+    fetchInitialContent();
+
+    // Set up awareness
+    const setupAwareness = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        const userColor =
+          niceColors[Math.floor(Math.random() * niceColors.length)];
+        provider.awareness.setLocalStateField("user", {
+          name: session.user.email || "Anonymous",
+          color: userColor,
+        });
+      }
+    };
+
+    setupAwareness();
+
+    // Listen for connection status changes
+    provider.on("status", (event: StatusEvent) => {
+      if (onConnectionStatusChange) {
+        onConnectionStatusChange(event.status);
+      }
+    });
+
+    // Listen for changes and save
+    ydoc.on("update", (update, origin) => {
+      if (origin !== provider) {
+        // Only save local changes
+        saveDocument(ydoc);
+      }
+    });
+
     return () => {
       provider.destroy();
+      editorView.destroy();
       ydoc.destroy();
-      view.destroy();
+      ydocRef.current = null;
+      providerRef.current = null;
     };
-  }, [onConnectionStatusChange]);
+  }, [docId, onConnectionStatusChange, saveDocument]);
 
   return (
     <div className="h-full flex flex-col bg-slate-900">
       {/* Toolbar */}
       <div className="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <button className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md text-sm transition-colors duration-200 flex items-center space-x-1.5">
+          <button
+            onClick={() => ydocRef.current && saveDocument(ydocRef.current)}
+            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md text-sm transition-colors duration-200 flex items-center space-x-1.5"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               className="h-4 w-4"
@@ -134,22 +225,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
               <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
             </svg>
             <span>Save</span>
-          </button>
-
-          <button className="px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-md text-sm transition-all duration-200 flex items-center space-x-1.5 shadow-md">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span>Run</span>
           </button>
 
           <div className="w-px h-6 bg-slate-600"></div>
@@ -182,7 +257,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
             <span>Settings</span>
           </button>
         </div>
-
         <div className="flex items-center space-x-2 text-sm text-slate-400">
           <span>JavaScript</span>
           <div className="w-px h-4 bg-slate-600"></div>

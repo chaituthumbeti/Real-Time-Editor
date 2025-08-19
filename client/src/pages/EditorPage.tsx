@@ -1,20 +1,41 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 import Editor from "../Editor";
+import { useNavigate } from "react-router-dom";
 
-interface EditorPageProps {
-  session: Session;
-}
-
-const EditorPage = ({ session }: EditorPageProps) => {
+const EditorPage = () => {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<
     "connecting" | "connected" | "disconnected"
   >("connecting");
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // This function checks if a user is logged in
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        // If no user is logged in, redirect to the homepage
+        navigate("/");
+      } else {
+        setSession(session);
+        setLoading(false);
+      }
+    };
+
+    checkSession();
+  }, [navigate]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    // After logging out, redirect to the homepage
+    navigate("/");
   };
 
   const handleConnectionStatusChange = (
@@ -22,6 +43,15 @@ const EditorPage = ({ session }: EditorPageProps) => {
   ) => {
     setConnectionStatus(status);
   };
+
+  // Show a loading spinner while checking for the session
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-slate-900 text-white flex flex-col">
@@ -50,7 +80,6 @@ const EditorPage = ({ session }: EditorPageProps) => {
               CodeCollab
             </h1>
           </div>
-
           {/* Connection Status */}
           <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-700/50 rounded-lg backdrop-blur-sm">
             <div
@@ -71,7 +100,6 @@ const EditorPage = ({ session }: EditorPageProps) => {
             </span>
           </div>
         </div>
-
         {/* User Menu */}
         <div className="flex items-center space-x-4">
           <div className="relative">
@@ -81,11 +109,11 @@ const EditorPage = ({ session }: EditorPageProps) => {
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 flex items-center justify-center shadow-md">
                 <span className="text-sm font-semibold text-white">
-                  {session.user.email?.charAt(0).toUpperCase() || "U"}
+                  {session?.user.email?.charAt(0).toUpperCase() || "U"}
                 </span>
               </div>
               <span className="text-sm text-slate-300 hidden md:inline">
-                {session.user.email}
+                {session?.user.email}
               </span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -102,13 +130,12 @@ const EditorPage = ({ session }: EditorPageProps) => {
                 />
               </svg>
             </button>
-
             {/* Dropdown Menu */}
             {showUserMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-10 animate-fadeIn">
                 <div className="px-4 py-3 border-b border-slate-700">
                   <p className="text-sm font-medium text-white">
-                    {session.user.email}
+                    {session?.user.email}
                   </p>
                   <p className="text-xs text-slate-400">Active</p>
                 </div>
@@ -135,7 +162,6 @@ const EditorPage = ({ session }: EditorPageProps) => {
           </div>
         </div>
       </header>
-
       {/* Editor Container */}
       <div className="flex-1">
         <Editor onConnectionStatusChange={handleConnectionStatusChange} />
