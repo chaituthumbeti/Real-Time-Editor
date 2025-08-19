@@ -3,8 +3,10 @@ import { supabase } from "../supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 import Editor from "../Editor";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../contexts/ThemeContext";
 
 const EditorPage = () => {
+  const { theme, toggleTheme } = useTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<
@@ -19,7 +21,6 @@ const EditorPage = () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
       if (!session) {
         // If no user is logged in, redirect to the homepage
         navigate("/");
@@ -28,7 +29,6 @@ const EditorPage = () => {
         setLoading(false);
       }
     };
-
     checkSession();
   }, [navigate]);
 
@@ -47,16 +47,16 @@ const EditorPage = () => {
   // Show a loading spinner while checking for the session
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 dark:bg-slate-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 dark:border-purple-700"></div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-slate-900 text-white flex flex-col">
+    <div className="h-screen bg-white text-slate-900 dark:bg-slate-900 dark:text-white flex flex-col transition-colors duration-200">
       {/* Header */}
-      <header className="bg-slate-800 shadow-lg py-3 px-6 flex justify-between items-center border-b border-slate-700">
+      <header className="bg-slate-100 dark:bg-slate-800 shadow-lg py-3 px-6 flex justify-between items-center border-b border-slate-200 dark:border-slate-700 transition-colors duration-200">
         {/* Logo and Title */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
@@ -76,12 +76,12 @@ const EditorPage = () => {
                 />
               </svg>
             </div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
+            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
               CodeCollab
             </h1>
           </div>
           {/* Connection Status */}
-          <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-700/50 rounded-lg backdrop-blur-sm">
+          <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-200 dark:bg-slate-700/50 rounded-lg backdrop-blur-sm transition-colors duration-200">
             <div
               className={`w-2.5 h-2.5 rounded-full ${
                 connectionStatus === "connected"
@@ -91,7 +91,7 @@ const EditorPage = () => {
                   : "bg-red-500"
               }`}
             ></div>
-            <span className="text-sm text-slate-300">
+            <span className="text-sm text-slate-700 dark:text-slate-300">
               {connectionStatus === "connected"
                 ? "Connected"
                 : connectionStatus === "connecting"
@@ -102,22 +102,51 @@ const EditorPage = () => {
         </div>
         {/* User Menu */}
         <div className="flex items-center space-x-4">
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors duration-200"
+            aria-label="Toggle theme"
+          >
+            {theme === "light" ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 text-slate-700"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 text-slate-300"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 7.072l.707-.707a1 1 0 10-1.414-1.414l-.707.707a1 1 0 101.414 1.414zM3 11a1 1 0 100-2H2a1 1 0 100 2h1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+          </button>
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              className="flex items-center space-x-2 px-3 py-1.5 bg-slate-700/50 rounded-lg hover:bg-slate-700 transition-all duration-200 group"
+              className="flex items-center space-x-2 px-3 py-1.5 bg-slate-200 dark:bg-slate-700/50 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-all duration-200 group"
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 flex items-center justify-center shadow-md">
                 <span className="text-sm font-semibold text-white">
                   {session?.user.email?.charAt(0).toUpperCase() || "U"}
                 </span>
               </div>
-              <span className="text-sm text-slate-300 hidden md:inline">
+              <span className="text-sm text-slate-700 dark:text-slate-300 hidden md:inline">
                 {session?.user.email}
               </span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
+                className={`h-4 w-4 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${
                   showUserMenu ? "rotate-180" : ""
                 }`}
                 viewBox="0 0 20 20"
@@ -132,16 +161,18 @@ const EditorPage = () => {
             </button>
             {/* Dropdown Menu */}
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-10 animate-fadeIn">
-                <div className="px-4 py-3 border-b border-slate-700">
-                  <p className="text-sm font-medium text-white">
+              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-10 animate-fadeIn transition-colors duration-200">
+                <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">
                     {session?.user.email}
                   </p>
-                  <p className="text-xs text-slate-400">Active</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Active
+                  </p>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-700/50 transition-colors duration-200 flex items-center space-x-2"
+                  className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors duration-200 flex items-center space-x-2"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -163,8 +194,11 @@ const EditorPage = () => {
         </div>
       </header>
       {/* Editor Container */}
-      <div className="flex-1">
-        <Editor onConnectionStatusChange={handleConnectionStatusChange} />
+      <div className="flex-1 bg-white dark:bg-slate-900 transition-colors duration-200">
+        <Editor
+          onConnectionStatusChange={handleConnectionStatusChange}
+          theme={theme}
+        />
       </div>
     </div>
   );

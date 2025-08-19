@@ -7,14 +7,18 @@ import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { Compartment } from "@codemirror/state";
 import { supabase } from "./supabaseClient";
 import { useParams } from "react-router-dom";
 import debounce from "lodash.debounce";
+
 interface StatusEvent {
   status: "connecting" | "connected" | "disconnected";
 }
+
 const serverURL = import.meta.env.VITE_SERVER_URL || "ws://localhost:3001";
 const apiURL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+
 const niceColors = [
   "#8b5cf6",
   "#6366f1",
@@ -29,9 +33,38 @@ interface EditorProps {
   onConnectionStatusChange?: (
     status: "connecting" | "connected" | "disconnected"
   ) => void;
+  theme?: "light" | "dark";
 }
 
-const Editor = ({ onConnectionStatusChange }: EditorProps) => {
+// Create a light theme for CodeMirror
+const lightTheme = EditorView.theme({
+  "&": {
+    backgroundColor: "#ffffff",
+    color: "#1e293b",
+  },
+  ".cm-content": {
+    caretColor: "#1e293b",
+  },
+  "&.cm-focused .cm-cursor": {
+    borderLeftColor: "#1e293b",
+  },
+  ".cm-selectionBackground": {
+    backgroundColor: "#e2e8f0",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "#f1f5f9",
+  },
+  ".cm-gutters": {
+    backgroundColor: "#f8fafc",
+    color: "#64748b",
+    border: "none",
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    color: "#64748b",
+  },
+});
+const themeCompartment = new Compartment();
+const Editor = ({ onConnectionStatusChange, theme = "dark" }: EditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const { docId } = useParams<{ docId: string }>();
   const [view, setView] = useState<EditorView | null>(null);
@@ -43,22 +76,17 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
     if (!view) return;
     setIsRunning(true);
     setOutput("Executing...");
-
     const codeToRun = view.state.doc.toString();
-
     try {
       const response = await fetch(`${apiURL}/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: codeToRun }),
       });
-
       if (!response.ok) {
         throw new Error(`Server error: ${response.statusText}`);
       }
-
       const result = await response.json();
-
       if (result.stdout) {
         setOutput(result.stdout);
       } else if (result.stderr) {
@@ -90,7 +118,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
 
   useEffect(() => {
     if (!editorRef.current || !docId) return;
-
     let provider: WebsocketProvider | null = null;
     let editorView: EditorView | null = null;
     const ydoc = new Y.Doc();
@@ -98,23 +125,19 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
 
     const initialize = async () => {
       if (!editorRef.current) return;
-
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) return;
       const token = session.access_token;
-
       provider = new WebsocketProvider(
         `${serverURL}?token=${token}`,
         docId,
         ydoc
       );
-
       provider.on("status", (event: StatusEvent) => {
         if (onConnectionStatusChange) onConnectionStatusChange(event.status);
       });
-
       const userColor =
         niceColors[Math.floor(Math.random() * niceColors.length)];
       provider.awareness.setLocalStateField("user", {
@@ -127,9 +150,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
         .select("content")
         .eq("id", docId)
         .single();
-
       if (error) console.error("Error fetching document:", error);
-
       if (
         docData?.content &&
         Array.isArray(docData.content) &&
@@ -143,7 +164,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
       }
 
       const ytext = ydoc.getText("codemirror");
-
       ydoc.on("update", (_update, origin) => {
         if (origin !== provider) saveDocument(ydoc);
       });
@@ -154,7 +174,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
           keymap.of([...defaultKeymap, ...yUndoManagerKeymap]),
           javascript(),
           yCollab(ytext, provider.awareness),
-          oneDark,
+          themeCompartment.of(theme === "dark" ? oneDark : lightTheme),
           EditorView.theme({
             "&": { height: "100%" },
             ".cm-scroller": { overflow: "auto" },
@@ -166,7 +186,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
         state: startState,
         parent: editorRef.current,
       });
-
       setView(editorView);
     };
 
@@ -179,14 +198,39 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
     };
   }, [docId, onConnectionStatusChange, saveDocument]);
 
+  useEffect(() => {
+    if (!view) return;
+
+    // Update the theme using the compartment
+    view.dispatch({
+      effects: themeCompartment.reconfigure(
+        theme === "dark" ? oneDark : lightTheme
+      ),
+    });
+  }, [theme, view]);
+
   return (
-    <div className="h-full flex flex-col bg-slate-900">
+    <div
+      className={`h-full flex flex-col transition-colors duration-200 ${
+        theme === "dark" ? "bg-slate-900" : "bg-white"
+      }`}
+    >
       {/* Toolbar */}
-      <div className="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-end">
+      <div
+        className={`px-4 py-2 flex items-center justify-end border-b transition-colors duration-200 ${
+          theme === "dark"
+            ? "bg-slate-800 border-slate-700"
+            : "bg-slate-100 border-slate-200"
+        }`}
+      >
         <button
           onClick={handleRunCode}
           disabled={isRunning}
-          className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-md text-sm font-medium text-white transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50 ${
+            theme === "dark"
+              ? "bg-green-600 hover:bg-green-700 text-white"
+              : "bg-green-500 hover:bg-green-600 text-white"
+          }`}
         >
           {isRunning ? (
             <svg
@@ -229,14 +273,50 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
 
       {/* Editor and Output Panes */}
       <div className="flex-1 flex h-[calc(100%-49px)] overflow-hidden">
-        <div className="w-1/2 h-full">
-          <div className="h-full" ref={editorRef} />
+        {/* Editor Pane */}
+        <div
+          className={`w-1/2 h-full flex flex-col ${
+            theme === "dark" ? "bg-slate-800" : "bg-slate-50"
+          }`}
+        >
+          <div
+            className={`px-4 py-2 text-sm font-medium border-b ${
+              theme === "dark"
+                ? "bg-slate-800 border-slate-700 text-slate-300"
+                : "bg-slate-100 border-slate-200 text-slate-700"
+            }`}
+          >
+            Editor
+          </div>
+          <div className="h-full flex-1" ref={editorRef} />
         </div>
-        <div className="w-1/2 h-full bg-black/30 p-4 font-mono text-sm text-slate-300 overflow-auto border-l border-slate-700">
-          <h3 className="text-slate-400 border-b border-slate-600 pb-2 mb-2 font-semibold">
+
+        {/* Output Pane */}
+        <div
+          className={`w-1/2 h-full flex flex-col border-l ${
+            theme === "dark"
+              ? "bg-slate-800 border-slate-700"
+              : "bg-slate-50 border-slate-200"
+          }`}
+        >
+          <div
+            className={`px-4 py-2 text-sm font-medium border-b ${
+              theme === "dark"
+                ? "bg-slate-800 border-slate-700 text-slate-300"
+                : "bg-slate-100 border-slate-200 text-slate-700"
+            }`}
+          >
             Output
-          </h3>
-          <pre className="whitespace-pre-wrap">{output}</pre>
+          </div>
+          <div
+            className={`flex-1 p-4 font-mono text-sm overflow-auto ${
+              theme === "dark"
+                ? "bg-slate-900 text-slate-300"
+                : "bg-white text-slate-800"
+            }`}
+          >
+            <pre className="whitespace-pre-wrap">{output}</pre>
+          </div>
         </div>
       </div>
     </div>

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import type { Session } from "@supabase/supabase-js";
-
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../contexts/ThemeContext";
 
 interface Document {
   id: string;
@@ -15,6 +15,7 @@ interface DashboardPageProps {
 }
 
 const DashboardPage = ({ session }: DashboardPageProps) => {
+  const { theme, toggleTheme } = useTheme();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +31,6 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
         .from("documents")
         .select("*")
         .order("created_at", { ascending: false });
-
       if (error) {
         console.error("Error fetching documents:", error);
       } else {
@@ -50,7 +50,6 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
       .insert([{}]) // Insert a new row with default values
       .select()
       .single(); // Get the single created row back
-
     if (error) {
       console.error("Error creating document:", error.message);
     } else if (data) {
@@ -58,21 +57,19 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
     }
     setCreating(false);
   };
+
   // Function to format date
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
     if (diffDays === 1) return "Yesterday";
     if (diffDays < 7) return `${diffDays} days ago`;
     if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-
     return date.toLocaleDateString();
   };
 
-  // Fetch documents when the component mounts
   useEffect(() => {
     fetchDocuments();
   }, []);
@@ -82,9 +79,21 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-slate-200">
+    <div
+      className={`min-h-screen transition-colors duration-200 ${
+        theme === "dark"
+          ? "bg-gradient-to-br from-slate-900 to-slate-800 text-slate-200"
+          : "bg-slate-50 text-slate-900"
+      }`}
+    >
       {/* Header */}
-      <header className="bg-slate-800/80 backdrop-blur-sm shadow-lg py-4 px-6 flex justify-between items-center border-b border-slate-700 sticky top-0 z-10">
+      <header
+        className={`py-4 px-6 flex justify-between items-center border-b sticky top-0 z-10 backdrop-blur-sm transition-colors duration-200 ${
+          theme === "dark"
+            ? "bg-slate-800/80 border-slate-700 shadow-lg"
+            : "bg-white/80 border-slate-200 shadow-md"
+        }`}
+      >
         <div className="flex items-center space-x-4">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg">
             <svg
@@ -102,13 +111,53 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
               />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
             CodeCollab
           </h1>
         </div>
-
         <div className="flex items-center space-x-4">
-          <button className="p-2 rounded-lg hover:bg-slate-700/50 transition-colors">
+          <button
+            onClick={toggleTheme}
+            className={`p-2 rounded-lg transition-colors duration-200 ${
+              theme === "dark"
+                ? "hover:bg-slate-700/50 text-slate-300"
+                : "hover:bg-slate-200 text-slate-700"
+            }`}
+            aria-label="Toggle theme"
+          >
+            {theme === "light" ? (
+              // Moon Icon for Light Mode
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+              </svg>
+            ) : (
+              // Sun Icon for Dark Mode
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 7.072l.707-.707a1 1 0 10-1.414-1.414l-.707.707a1 1 0 101.414 1.414zM3 11a1 1 0 100-2H2a1 1 0 100 2h1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+          </button>
+          <button
+            className={`p-2 rounded-lg transition-colors duration-200 ${
+              theme === "dark"
+                ? "hover:bg-slate-700/50 text-slate-300"
+                : "hover:bg-slate-200 text-slate-700"
+            }`}
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               className="h-5 w-5"
@@ -124,7 +173,6 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
               />
             </svg>
           </button>
-
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
@@ -137,7 +185,9 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
               </div>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4 text-slate-400"
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  showUserMenu ? "rotate-180" : ""
+                } ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -150,17 +200,34 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                 />
               </svg>
             </button>
-
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-lg z-20">
-                <div className="px-4 py-3 border-b border-slate-700">
-                  <p className="text-sm font-medium text-slate-200 truncate">
+              <div
+                className={`absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-20 transition-colors duration-200 ${
+                  theme === "dark"
+                    ? "bg-slate-800 border border-slate-700"
+                    : "bg-white border border-slate-200"
+                }`}
+              >
+                <div
+                  className={`px-4 py-3 border-b ${
+                    theme === "dark" ? "border-slate-700" : "border-slate-200"
+                  }`}
+                >
+                  <p
+                    className={`text-sm font-medium truncate ${
+                      theme === "dark" ? "text-slate-200" : "text-slate-900"
+                    }`}
+                  >
                     {session.user.email}
                   </p>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-700 hover:text-red-300 transition-colors"
+                  className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                    theme === "dark"
+                      ? "text-red-400 hover:bg-slate-700 hover:text-red-300"
+                      : "text-red-500 hover:bg-slate-100 hover:text-red-600"
+                  }`}
                 >
                   Logout
                 </button>
@@ -174,14 +241,22 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
       <main className="max-w-7xl mx-auto py-10 px-6">
         {/* Welcome Section */}
         <div className="mb-12">
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-100 mb-2">
+          <h1
+            className={`text-3xl md:text-4xl font-bold mb-2 ${
+              theme === "dark" ? "text-slate-100" : "text-slate-900"
+            }`}
+          >
             Welcome back,{" "}
-            <span className="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
               {session.user.email?.split("@")[0]}
             </span>
             !
           </h1>
-          <p className="text-slate-400 max-w-2xl">
+          <p
+            className={`max-w-2xl ${
+              theme === "dark" ? "text-slate-400" : "text-slate-600"
+            }`}
+          >
             Collaborate with your team in real-time. Create new documents or
             continue working on existing ones.
           </p>
@@ -189,18 +264,40 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 hover:border-purple-500 transition-all duration-300">
+          <div
+            className={`rounded-xl p-6 hover:border-purple-500 transition-all duration-300 ${
+              theme === "dark"
+                ? "bg-slate-800/50 backdrop-blur-sm border border-slate-700"
+                : "bg-white border border-slate-200 shadow-sm"
+            }`}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-slate-400 text-sm">Total Documents</p>
-                <p className="text-3xl font-bold text-slate-100 mt-1">
+                <p
+                  className={`text-sm ${
+                    theme === "dark" ? "text-slate-400" : "text-slate-500"
+                  }`}
+                >
+                  Total Documents
+                </p>
+                <p
+                  className={`text-3xl font-bold mt-1 ${
+                    theme === "dark" ? "text-slate-100" : "text-slate-900"
+                  }`}
+                >
                   {documents.length}
                 </p>
               </div>
-              <div className="w-12 h-12 rounded-lg bg-purple-900/30 flex items-center justify-center">
+              <div
+                className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                  theme === "dark" ? "bg-purple-900/30" : "bg-purple-100"
+                }`}
+              >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6 text-purple-400"
+                  className={`h-6 w-6 ${
+                    theme === "dark" ? "text-purple-400" : "text-purple-600"
+                  }`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -216,16 +313,40 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
             </div>
           </div>
 
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 hover:border-indigo-500 transition-all duration-300">
+          <div
+            className={`rounded-xl p-6 hover:border-indigo-500 transition-all duration-300 ${
+              theme === "dark"
+                ? "bg-slate-800/50 backdrop-blur-sm border border-slate-700"
+                : "bg-white border border-slate-200 shadow-sm"
+            }`}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-slate-400 text-sm">Active Collaborators</p>
-                <p className="text-3xl font-bold text-slate-100 mt-1">8</p>
+                <p
+                  className={`text-sm ${
+                    theme === "dark" ? "text-slate-400" : "text-slate-500"
+                  }`}
+                >
+                  Active Collaborators
+                </p>
+                <p
+                  className={`text-3xl font-bold mt-1 ${
+                    theme === "dark" ? "text-slate-100" : "text-slate-900"
+                  }`}
+                >
+                  8
+                </p>
               </div>
-              <div className="w-12 h-12 rounded-lg bg-indigo-900/30 flex items-center justify-center">
+              <div
+                className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                  theme === "dark" ? "bg-indigo-900/30" : "bg-indigo-100"
+                }`}
+              >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6 text-indigo-400"
+                  className={`h-6 w-6 ${
+                    theme === "dark" ? "text-indigo-400" : "text-indigo-600"
+                  }`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -241,16 +362,40 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
             </div>
           </div>
 
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 hover:border-teal-500 transition-all duration-300">
+          <div
+            className={`rounded-xl p-6 hover:border-teal-500 transition-all duration-300 ${
+              theme === "dark"
+                ? "bg-slate-800/50 backdrop-blur-sm border border-slate-700"
+                : "bg-white border border-slate-200 shadow-sm"
+            }`}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-slate-400 text-sm">Recent Activity</p>
-                <p className="text-3xl font-bold text-slate-100 mt-1">24</p>
+                <p
+                  className={`text-sm ${
+                    theme === "dark" ? "text-slate-400" : "text-slate-500"
+                  }`}
+                >
+                  Recent Activity
+                </p>
+                <p
+                  className={`text-3xl font-bold mt-1 ${
+                    theme === "dark" ? "text-slate-100" : "text-slate-900"
+                  }`}
+                >
+                  24
+                </p>
               </div>
-              <div className="w-12 h-12 rounded-lg bg-teal-900/30 flex items-center justify-center">
+              <div
+                className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                  theme === "dark" ? "bg-teal-900/30" : "bg-teal-100"
+                }`}
+              >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6 text-teal-400"
+                  className={`h-6 w-6 ${
+                    theme === "dark" ? "text-teal-400" : "text-teal-600"
+                  }`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -269,7 +414,13 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
 
         {/* Documents Section */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-slate-100">Your Documents</h2>
+          <h2
+            className={`text-2xl font-bold ${
+              theme === "dark" ? "text-slate-100" : "text-slate-900"
+            }`}
+          >
+            Your Documents
+          </h2>
           <button
             onClick={createNewDocument}
             disabled={creating}
@@ -324,14 +475,32 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
         {/* Document Grid */}
         {loading ? (
           <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+            <div
+              className={`animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 ${
+                theme === "dark" ? "border-purple-500" : "border-purple-600"
+              }`}
+            ></div>
           </div>
         ) : documents.length === 0 ? (
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-r from-purple-600/20 to-indigo-600/20 mb-4">
+          <div
+            className={`rounded-xl p-12 text-center transition-colors duration-200 ${
+              theme === "dark"
+                ? "bg-slate-800/50 backdrop-blur-sm border border-slate-700"
+                : "bg-white border border-slate-200 shadow-sm"
+            }`}
+          >
+            <div
+              className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
+                theme === "dark"
+                  ? "bg-gradient-to-r from-purple-600/20 to-indigo-600/20"
+                  : "bg-gradient-to-r from-purple-100 to-indigo-100"
+              }`}
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="h-8 w-8 text-purple-400"
+                className={`h-8 w-8 ${
+                  theme === "dark" ? "text-purple-400" : "text-purple-600"
+                }`}
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -344,10 +513,18 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                 />
               </svg>
             </div>
-            <h3 className="text-xl font-medium text-slate-200 mb-2">
+            <h3
+              className={`text-xl font-medium mb-2 ${
+                theme === "dark" ? "text-slate-200" : "text-slate-900"
+              }`}
+            >
               No documents yet
             </h3>
-            <p className="text-slate-400 max-w-md mx-auto mb-6">
+            <p
+              className={`max-w-md mx-auto mb-6 ${
+                theme === "dark" ? "text-slate-400" : "text-slate-600"
+              }`}
+            >
               Create your first document to start collaborating with your team
               in real-time.
             </p>
@@ -407,13 +584,25 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
               <div
                 key={doc.id}
                 onClick={() => navigate(`/doc/${doc.id}`)}
-                className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 hover:border-purple-500 transition-all duration-300 group"
+                className={`rounded-xl p-6 hover:border-purple-500 transition-all duration-300 group cursor-pointer ${
+                  theme === "dark"
+                    ? "bg-slate-800/50 backdrop-blur-sm border border-slate-700"
+                    : "bg-white border border-slate-200 shadow-sm"
+                }`}
               >
                 <div className="flex justify-between items-start mb-4">
-                  <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-purple-600/20 to-indigo-600/20 flex items-center justify-center shadow-md">
+                  <div
+                    className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-md ${
+                      theme === "dark"
+                        ? "bg-gradient-to-r from-purple-600/20 to-indigo-600/20"
+                        : "bg-gradient-to-r from-purple-100 to-indigo-100"
+                    }`}
+                  >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      className="h-6 w-6 text-purple-400"
+                      className={`h-6 w-6 ${
+                        theme === "dark" ? "text-purple-400" : "text-purple-600"
+                      }`}
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -426,7 +615,13 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                       />
                     </svg>
                   </div>
-                  <button className="text-slate-500 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    className={`transition-opacity ${
+                      theme === "dark"
+                        ? "text-slate-500 hover:text-slate-300"
+                        : "text-slate-400 hover:text-slate-600"
+                    } opacity-0 group-hover:opacity-100`}
+                  >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       className="h-5 w-5"
@@ -443,10 +638,18 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                     </svg>
                   </button>
                 </div>
-                <h3 className="text-lg font-semibold text-slate-100 mb-2">
+                <h3
+                  className={`text-lg font-semibold mb-2 ${
+                    theme === "dark" ? "text-slate-100" : "text-slate-900"
+                  }`}
+                >
                   {doc.title || "Untitled Document"}
                 </h3>
-                <div className="flex items-center text-sm text-slate-400 mb-4">
+                <div
+                  className={`flex items-center text-sm mb-4 ${
+                    theme === "dark" ? "text-slate-400" : "text-slate-500"
+                  }`}
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     className="h-4 w-4 mr-1"
@@ -465,11 +668,35 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="flex -space-x-2">
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 border-2 border-slate-800"></div>
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 border-2 border-slate-800"></div>
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 border-2 border-slate-800"></div>
+                    <div
+                      className={`w-6 h-6 rounded-full border-2 ${
+                        theme === "dark"
+                          ? "bg-gradient-to-r from-indigo-500 to-purple-500 border-slate-800"
+                          : "bg-gradient-to-r from-indigo-500 to-purple-500 border-white"
+                      }`}
+                    ></div>
+                    <div
+                      className={`w-6 h-6 rounded-full border-2 ${
+                        theme === "dark"
+                          ? "bg-gradient-to-r from-teal-500 to-cyan-500 border-slate-800"
+                          : "bg-gradient-to-r from-teal-500 to-cyan-500 border-white"
+                      }`}
+                    ></div>
+                    <div
+                      className={`w-6 h-6 rounded-full border-2 ${
+                        theme === "dark"
+                          ? "bg-gradient-to-r from-amber-500 to-orange-500 border-slate-800"
+                          : "bg-gradient-to-r from-amber-500 to-orange-500 border-white"
+                      }`}
+                    ></div>
                   </div>
-                  <button className="text-sm text-purple-400 hover:text-purple-300 font-medium flex items-center">
+                  <button
+                    className={`text-sm font-medium flex items-center transition-colors ${
+                      theme === "dark"
+                        ? "text-purple-400 hover:text-purple-300"
+                        : "text-purple-600 hover:text-purple-700"
+                    }`}
+                  >
                     Open
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -494,7 +721,13 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
       </main>
 
       {/* Footer */}
-      <footer className="py-6 px-6 border-t border-slate-800 text-center text-slate-500 text-sm">
+      <footer
+        className={`py-6 px-6 border-t text-center text-sm transition-colors duration-200 ${
+          theme === "dark"
+            ? "border-slate-800 text-slate-500"
+            : "border-slate-200 text-slate-500"
+        }`}
+      >
         <p>© {new Date().getFullYear()} CodeCollab. All rights reserved.</p>
       </footer>
     </div>
