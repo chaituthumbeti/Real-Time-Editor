@@ -11,14 +11,17 @@ app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3001;
 
+// This is the fix: Add the health route back in
+app.get('/health', (req, res) => {
+  res.send('Server is healthy and awake!');
+});
+
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (conn, req) => {
   // Get the room name from the URL the client is connecting to
   const roomName = req.url?.slice(1).split('?')[0];
-
   console.log(`Connection attempt to room: "${roomName}"`);
-
   setupWSConnection(conn, req, { docName: roomName });
 });
 
