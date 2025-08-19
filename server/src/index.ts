@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
+app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -25,9 +25,8 @@ app.post('/execute', async (req, res) => {
   if (!code) {
     return res.status(400).send('No code provided.');
   }
-
+  
   const apiKey = process.env.RAPIDAPI_KEY;
-
   if (!apiKey) {
     return res.status(500).send('API key is not configured on the server.');
   }
@@ -63,7 +62,7 @@ app.post('/execute', async (req, res) => {
       } catch (error) {
         res.status(500).send('Error getting execution result.');
       }
-    }, 2000);
+    }, 3000); // Increased timeout to 3 seconds
 
   } catch (error) {
     res.status(500).send('Error executing code.');
