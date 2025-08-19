@@ -37,7 +37,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
   const { docId } = useParams<{ docId: string }>();
   const ydocRef = useRef<Y.Doc | null>(null);
 
-  // This useCallback is correct, but was missing from the useEffect dependency array
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const saveDocument = useCallback(
     debounce(async (doc: Y.Doc) => {
       if (!docId) return;
@@ -103,7 +103,8 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
 
       const ytext = ydoc.getText("codemirror");
 
-      ydoc.on("update", (update, origin) => {
+      // Fixed: Prefix with underscore to indicate intentionally unused parameter
+      ydoc.on("update", (_update, origin) => {
         if (origin !== provider) saveDocument(ydoc);
       });
 
@@ -163,7 +164,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
       view?.destroy();
       ydoc.destroy();
     };
-    // This is the fix: The dependency array was incorrect
   }, [docId, onConnectionStatusChange, saveDocument]);
 
   return (
