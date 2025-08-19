@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
@@ -10,8 +10,11 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { supabase } from "./supabaseClient";
 import { useParams } from "react-router-dom";
 import debounce from "lodash.debounce";
-
+interface StatusEvent {
+  status: "connecting" | "connected" | "disconnected";
+}
 const serverURL = import.meta.env.VITE_SERVER_URL || "ws://localhost:3001";
+const apiURL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const niceColors = [
   "#8b5cf6",
   "#6366f1",
@@ -22,10 +25,6 @@ const niceColors = [
   "#f59e0b",
 ];
 
-interface StatusEvent {
-  status: "connecting" | "connected" | "disconnected";
-}
-
 interface EditorProps {
   onConnectionStatusChange?: (
     status: "connecting" | "connected" | "disconnected"
@@ -35,6 +34,47 @@ interface EditorProps {
 const Editor = ({ onConnectionStatusChange }: EditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const { docId } = useParams<{ docId: string }>();
+  const [view, setView] = useState<EditorView | null>(null);
+  const [output, setOutput] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const ydocRef = useRef<Y.Doc | null>(null);
+
+  const handleRunCode = async () => {
+    if (!view) return;
+    setIsRunning(true);
+    setOutput("Executing...");
+
+    const codeToRun = view.state.doc.toString();
+
+    try {
+      const response = await fetch(`${apiURL}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codeToRun }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.stdout) {
+        setOutput(result.stdout);
+      } else if (result.stderr) {
+        setOutput(`Error:\n${result.stderr}`);
+      } else if (result.compile_output) {
+        setOutput(`Compile Error:\n${result.compile_output}`);
+      } else {
+        setOutput("Execution finished with no output.");
+      }
+    } catch (error) {
+      console.error("Failed to run code:", error);
+      setOutput("Failed to connect to the execution service.");
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   const saveDocument = useCallback(
     debounce(async (doc: Y.Doc) => {
@@ -52,8 +92,9 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
     if (!editorRef.current || !docId) return;
 
     let provider: WebsocketProvider | null = null;
-    let view: EditorView | null = null;
+    let editorView: EditorView | null = null;
     const ydoc = new Y.Doc();
+    ydocRef.current = ydoc;
 
     const initialize = async () => {
       if (!editorRef.current) return;
@@ -114,25 +155,92 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
           javascript(),
           yCollab(ytext, provider.awareness),
           oneDark,
+          EditorView.theme({
+            "&": { height: "100%" },
+            ".cm-scroller": { overflow: "auto" },
+          }),
         ],
       });
 
-      view = new EditorView({
+      editorView = new EditorView({
         state: startState,
         parent: editorRef.current,
       });
+
+      setView(editorView);
     };
 
     initialize();
 
     return () => {
       provider?.destroy();
-      view?.destroy();
+      editorView?.destroy();
       ydoc.destroy();
     };
   }, [docId, onConnectionStatusChange, saveDocument]);
 
-  return <div className="h-full flex-1" ref={editorRef} />;
+  return (
+    <div className="h-full flex flex-col bg-slate-900">
+      {/* Toolbar */}
+      <div className="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-end">
+        <button
+          onClick={handleRunCode}
+          disabled={isRunning}
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-md text-sm font-medium text-white transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
+        >
+          {isRunning ? (
+            <svg
+              className="animate-spin h-4 w-4 text-white"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+                clipRule="evenodd"
+              />
+            </svg>
+          )}
+          <span>{isRunning ? "Running..." : "Run"}</span>
+        </button>
+      </div>
+
+      {/* Editor and Output Panes */}
+      <div className="flex-1 flex h-[calc(100%-49px)] overflow-hidden">
+        <div className="w-1/2 h-full">
+          <div className="h-full" ref={editorRef} />
+        </div>
+        <div className="w-1/2 h-full bg-black/30 p-4 font-mono text-sm text-slate-300 overflow-auto border-l border-slate-700">
+          <h3 className="text-slate-400 border-b border-slate-600 pb-2 mb-2 font-semibold">
+            Output
+          </h3>
+          <pre className="whitespace-pre-wrap">{output}</pre>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default Editor;
