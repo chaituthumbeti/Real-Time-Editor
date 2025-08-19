@@ -4,7 +4,7 @@ import cors from 'cors';
 import { WebSocketServer } from 'ws';
 // @ts-ignore
 import { setupWSConnection } from 'y-websocket/bin/utils';
-import axios from 'axios'; 
+import axios from 'axios';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -26,17 +26,23 @@ app.post('/execute', async (req, res) => {
     return res.status(400).send('No code provided.');
   }
 
+  const apiKey = process.env.RAPIDAPI_KEY;
+
+  if (!apiKey) {
+    return res.status(500).send('API key is not configured on the server.');
+  }
+
   const options = {
     method: 'POST',
     url: 'https://judge0-ce.p.rapidapi.com/submissions',
     params: { base64_encoded: 'false', fields: '*' },
     headers: {
       'content-type': 'application/json',
-      'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+      'X-RapidAPI-Key': apiKey,
       'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com'
     },
     data: {
-      language_id: 63,
+      language_id: 63, // JavaScript
       source_code: code,
     }
   };
@@ -49,19 +55,17 @@ app.post('/execute', async (req, res) => {
       try {
         const resultResponse = await axios.get(`https://judge0-ce.p.rapidapi.com/submissions/${token}`, {
           headers: {
-            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+            'X-RapidAPI-Key': apiKey,
             'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com'
           }
         });
         res.send(resultResponse.data);
       } catch (error) {
-        console.error('Error getting execution result:', error);
         res.status(500).send('Error getting execution result.');
       }
-    }, 2000); 
+    }, 2000);
 
   } catch (error) {
-    console.error('Error submitting to Judge0:', error);
     res.status(500).send('Error executing code.');
   }
 });
@@ -70,7 +74,6 @@ const wss = new WebSocketServer({ server });
 
 wss.on('connection', (conn, req) => {
   const roomName = req.url?.slice(1).split('?')[0];
-  console.log(`Connection attempt to room: "${roomName}"`);
   setupWSConnection(conn, req, { docName: roomName });
 });
 
