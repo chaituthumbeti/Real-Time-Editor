@@ -35,179 +35,136 @@ interface EditorProps {
 const Editor = ({ onConnectionStatusChange }: EditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const { docId } = useParams<{ docId: string }>();
-  const [view, setView] = useState<EditorView | null>(null);
   const ydocRef = useRef<Y.Doc | null>(null);
-  const providerRef = useRef<WebsocketProvider | null>(null);
 
-  // Create the save function with debounce
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // This useCallback is correct, but was missing from the useEffect dependency array
   const saveDocument = useCallback(
     debounce(async (doc: Y.Doc) => {
       if (!docId) return;
-
-      // Convert the Yjs document to a binary format for saving
       const content = Y.encodeStateAsUpdate(doc);
       const { error } = await supabase
         .from("documents")
-        .update({ content: Array.from(content) }) // Save as an array of numbers
+        .update({ content: Array.from(content) })
         .eq("id", docId);
-
       if (error) {
         console.error("Error saving document:", error);
       } else {
         console.log("Document saved successfully!");
       }
-    }, 2000), // Save 2 seconds after the user stops typing
+    }, 2000),
     [docId]
   );
 
   useEffect(() => {
     if (!editorRef.current || !docId) return;
 
-    // Clean up previous instances
-    if (ydocRef.current) {
-      ydocRef.current.destroy();
-      ydocRef.current = null;
-    }
+    let provider: WebsocketProvider | null = null;
+    let view: EditorView | null = null;
 
-    if (providerRef.current) {
-      providerRef.current.destroy();
-      providerRef.current = null;
-    }
-
-    if (view) {
-      view.destroy();
-    }
-
-    // Create new Y.Doc and provider
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
-    const provider = new WebsocketProvider(serverURL, docId, ydoc);
-    providerRef.current = provider;
-
-    // Create the editor immediately
-    const ytext = ydoc.getText("codemirror");
-    const startState = EditorState.create({
-      doc: ytext.toString(),
-      extensions: [
-        keymap.of([...defaultKeymap, ...yUndoManagerKeymap]),
-        javascript(),
-        yCollab(ytext, provider.awareness),
-        oneDark,
-        EditorView.theme({
-          "&": {
-            fontSize: "14px",
-            backgroundColor: "#0f172a",
-            color: "#e2e8f0",
-            height: "100%",
-          },
-          ".cm-scroller": {
-            overflow: "auto",
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-          },
-          ".cm-content": {
-            caretColor: "#a5b4fc",
-            padding: "16px",
-          },
-          ".cm-cursor": {
-            borderLeftColor: "#a5b4fc",
-          },
-          ".cm-selectionBackground": {
-            backgroundColor: "#334155",
-          },
-          ".cm-line": {
-            padding: "0 4px",
-          },
-          ".cm-string": { color: "#a5b4fc" },
-          ".cm-keyword": { color: "#c084fc" },
-          ".cm-atom": { color: "#f472b6" },
-          ".cm-number": { color: "#fbbf24" },
-          ".cm-comment": { color: "#64748b", fontStyle: "italic" },
-        }),
-      ],
-    });
-
-    const editorView = new EditorView({
-      state: startState,
-      parent: editorRef.current,
-    });
-
-    setView(editorView);
-
-    // Now fetch and apply the initial content
-    const fetchInitialContent = async () => {
-      console.log("Fetching document content for ID:", docId);
+    const initializeEditor = async () => {
+      // Fetch initial content first
       const { data, error } = await supabase
         .from("documents")
         .select("content")
         .eq("id", docId)
         .single();
 
-      if (error) {
-        console.error("Error fetching document:", error);
-        return;
+      if (error) console.error("Error fetching document:", error);
+
+      if (data?.content) {
+        Y.applyUpdate(ydoc, new Uint8Array(data.content));
       }
 
-      console.log("Fetched document data:", data);
+      // Now that content is loaded, create the provider and editor
+      provider = new WebsocketProvider(serverURL, docId, ydoc);
 
-      if (data && data.content && Array.isArray(data.content)) {
-        console.log("Applying initial content to Yjs document");
-        // Apply the saved content to the Yjs document
-        try {
-          Y.applyUpdate(ydoc, new Uint8Array(data.content));
-          console.log("Content applied successfully");
-        } catch (e) {
-          console.error("Error applying content:", e);
+      provider.on("status", (event: StatusEvent) => {
+        if (onConnectionStatusChange) onConnectionStatusChange(event.status);
+      });
+
+      const setupAwareness = async () => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session) {
+          const userColor =
+            niceColors[Math.floor(Math.random() * niceColors.length)];
+          provider?.awareness.setLocalStateField("user", {
+            name: session.user.email || "Anonymous",
+            color: userColor,
+          });
         }
-      } else {
-        console.log("No content found in database or invalid format");
-      }
+      };
+
+      setupAwareness();
+
+      const ytext = ydoc.getText("codemirror");
+
+      ydoc.on("update", (update, origin) => {
+        if (origin !== provider) saveDocument(ydoc);
+      });
+
+      const startState = EditorState.create({
+        doc: ytext.toString(),
+        extensions: [
+          keymap.of([...defaultKeymap, ...yUndoManagerKeymap]),
+          javascript(),
+          yCollab(ytext, provider.awareness),
+          oneDark,
+          EditorView.theme({
+            "&": {
+              fontSize: "14px",
+              backgroundColor: "#0f172a",
+              color: "#e2e8f0",
+              height: "100%",
+            },
+            ".cm-scroller": {
+              overflow: "auto",
+              fontFamily:
+                "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+            },
+            ".cm-content": {
+              caretColor: "#a5b4fc",
+              padding: "16px",
+            },
+            ".cm-cursor": {
+              borderLeftColor: "#a5b4fc",
+            },
+            ".cm-selectionBackground": {
+              backgroundColor: "#334155",
+            },
+            ".cm-line": {
+              padding: "0 4px",
+            },
+            ".cm-string": { color: "#a5b4fc" },
+            ".cm-keyword": { color: "#c084fc" },
+            ".cm-atom": { color: "#f472b6" },
+            ".cm-number": { color: "#fbbf24" },
+            ".cm-comment": { color: "#64748b", fontStyle: "italic" },
+          }),
+        ],
+      });
+
+      if (!editorRef.current) return;
+
+      view = new EditorView({
+        state: startState,
+        parent: editorRef.current,
+      });
     };
 
-    fetchInitialContent();
-
-    // Set up awareness
-    const setupAwareness = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
-        const userColor =
-          niceColors[Math.floor(Math.random() * niceColors.length)];
-        provider.awareness.setLocalStateField("user", {
-          name: session.user.email || "Anonymous",
-          color: userColor,
-        });
-      }
-    };
-
-    setupAwareness();
-
-    // Listen for connection status changes
-    provider.on("status", (event: StatusEvent) => {
-      if (onConnectionStatusChange) {
-        onConnectionStatusChange(event.status);
-      }
-    });
-
-    // Listen for changes and save
-    ydoc.on("update", (update, origin) => {
-      if (origin !== provider) {
-        // Only save local changes
-        saveDocument(ydoc);
-        console.log(update);
-      }
-    });
+    initializeEditor();
 
     return () => {
-      provider.destroy();
-      editorView.destroy();
+      provider?.destroy();
+      view?.destroy();
       ydoc.destroy();
-      ydocRef.current = null;
-      providerRef.current = null;
     };
-  }, [docId, onConnectionStatusChange, saveDocument, view]);
+    // This is the fix: The dependency array was incorrect
+  }, [docId, onConnectionStatusChange, saveDocument]);
 
   return (
     <div className="h-full flex flex-col bg-slate-900">
@@ -228,9 +185,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
             </svg>
             <span>Save</span>
           </button>
-
           <div className="w-px h-6 bg-slate-600"></div>
-
           <button className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md text-sm transition-colors duration-200 flex items-center space-x-1.5">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -242,7 +197,6 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
             </svg>
             <span>Share</span>
           </button>
-
           <button className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md text-sm transition-colors duration-200 flex items-center space-x-1.5">
             <svg
               xmlns="http://www.w3.org/2000/svg"
