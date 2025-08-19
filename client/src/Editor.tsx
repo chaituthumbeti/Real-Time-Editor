@@ -40,6 +40,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
   const providerRef = useRef<WebsocketProvider | null>(null);
 
   // Create the save function with debounce
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const saveDocument = useCallback(
     debounce(async (doc: Y.Doc) => {
       if (!docId) return;
@@ -195,6 +196,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
       if (origin !== provider) {
         // Only save local changes
         saveDocument(ydoc);
+        console.log(update);
       }
     });
 
@@ -205,7 +207,7 @@ const Editor = ({ onConnectionStatusChange }: EditorProps) => {
       ydocRef.current = null;
       providerRef.current = null;
     };
-  }, [docId, onConnectionStatusChange, saveDocument]);
+  }, [docId, onConnectionStatusChange, saveDocument, view]);
 
   return (
     <div className="h-full flex flex-col bg-slate-900">
