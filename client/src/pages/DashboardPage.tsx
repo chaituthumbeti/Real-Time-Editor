@@ -22,6 +22,11 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
 
+  const [registeredUsers, setRegisteredUsers] = useState(0);
+  const [recentActivity, setRecentActivity] = useState(0);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newDocumentTitle, setNewDocumentTitle] = useState("");
+
   // Function to fetch documents from the database
   const fetchDocuments = async () => {
     setLoading(true);
@@ -42,36 +47,82 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
       setLoading(false);
     }
   };
+  const fetchRegisteredUsers = async () => {
+    const { data, error } = await supabase.rpc("get_total_users");
+    if (error) console.error("Error fetching user count:", error);
+    else setRegisteredUsers(data);
+  };
 
-  const createNewDocument = async () => {
-    setCreating(true);
-    const { data, error } = await supabase
+  const fetchRecentActivity = async () => {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const { count, error } = await supabase
       .from("documents")
-      .insert([{}]) // Insert a new row with default values
-      .select()
-      .single(); // Get the single created row back
-    if (error) {
-      console.error("Error creating document:", error.message);
-    } else if (data) {
-      navigate(`/doc/${data.id}`); // Navigate to the new document's editor page
-    }
-    setCreating(false);
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", oneWeekAgo.toISOString());
+    if (error) console.error("Error fetching recent activity:", error);
+    else setRecentActivity(count || 0);
   };
 
   // Function to format date
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-    return date.toLocaleDateString();
-  };
+    const seconds = Math.round((now.getTime() - date.getTime()) / 1000);
 
+    const minutes = Math.round(seconds / 60);
+    const hours = Math.round(minutes / 60);
+    const days = Math.round(hours / 24);
+    const weeks = Math.round(days / 7);
+    const months = Math.round(days / 30);
+    const years = Math.round(days / 365);
+
+    if (seconds < 60) {
+      return "Just now";
+    } else if (minutes < 60) {
+      return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+    } else if (hours < 24) {
+      return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+    } else if (days < 7) {
+      return `${days} day${days > 1 ? "s" : ""} ago`;
+    } else if (weeks < 5) {
+      return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
+    } else if (months < 12) {
+      return `${months} month${months > 1 ? "s" : ""} ago`;
+    } else {
+      return `${years} year${years > 1 ? "s" : ""} ago`;
+    }
+  };
+  const handleCreateDocument = async (e: React.FormEvent) => {
+    e.preventDefault(); // Prevent default form submission
+    if (!newDocumentTitle.trim()) return; // Don't create if title is empty
+
+    setCreating(true);
+    const { data, error } = await supabase
+      .from("documents")
+      .insert([
+        {
+          title: newDocumentTitle, // Use the title from the input
+          // user_id is set automatically by the default value in your Supabase table
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating document:", error.message);
+    } else if (data) {
+      navigate(`/doc/${data.id}`); // Navigate to the new document
+    }
+
+    setNewDocumentTitle("");
+    setShowCreateModal(false);
+    setCreating(false);
+  };
   useEffect(() => {
     fetchDocuments();
+    fetchRegisteredUsers();
+    fetchRecentActivity();
   }, []);
 
   const handleLogout = async () => {
@@ -334,7 +385,7 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                     theme === "dark" ? "text-slate-100" : "text-slate-900"
                   }`}
                 >
-                  8
+                  {registeredUsers}
                 </p>
               </div>
               <div
@@ -383,7 +434,7 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                     theme === "dark" ? "text-slate-100" : "text-slate-900"
                   }`}
                 >
-                  24
+                  {recentActivity}
                 </p>
               </div>
               <div
@@ -422,7 +473,7 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
             Your Documents
           </h2>
           <button
-            onClick={createNewDocument}
+            onClick={() => setShowCreateModal(true)}
             disabled={creating}
             className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg font-medium text-white transition-all duration-200 shadow-lg flex items-center space-x-2 disabled:opacity-70"
           >
@@ -529,7 +580,7 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
               in real-time.
             </p>
             <button
-              onClick={createNewDocument}
+              onClick={() => setShowCreateModal(true)}
               disabled={creating}
               className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg font-medium text-white transition-all duration-200 shadow-lg inline-flex items-center space-x-2 disabled:opacity-70"
             >
@@ -730,6 +781,46 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
       >
         <p>© {new Date().getFullYear()} CodeCollab. All rights reserved.</p>
       </footer>
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-20">
+          <div className="bg-slate-800 p-8 rounded-xl shadow-lg w-full max-w-md border border-slate-700">
+            <h2 className="text-2xl font-bold mb-6 text-white">
+              Create New Document
+            </h2>
+            <form onSubmit={handleCreateDocument}>
+              <div>
+                <label
+                  htmlFor="title"
+                  className="block text-sm font-medium text-slate-300 mb-2"
+                >
+                  Document Title
+                </label>
+                <input
+                  id="title"
+                  type="text"
+                  value={newDocumentTitle}
+                  onChange={(e) => setNewDocumentTitle(e.target.value)}
+                  placeholder="My awesome project"
+                  className="w-full px-3 py-3 bg-slate-700/50 border border-slate-600 rounded-lg text-white ..."
+                  required
+                />
+              </div>
+              <div className="flex justify-end space-x-4 mt-8">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="..."
+                >
+                  Cancel
+                </button>
+                <button type="submit" disabled={creating} className="...">
+                  {creating ? "Creating..." : "Create Document"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
