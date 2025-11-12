@@ -218,14 +218,6 @@ const Editor: React.FC<EditorProps> = ({
     let editorView: EditorView | null = null;
     const ydoc = new Y.Doc();
 
-    if (initialContent && initialContent.length > 0) {
-      try {
-        Y.applyUpdate(ydoc, initialContent);
-      } catch (_e) {
-        console.warn(_e);
-      }
-    }
-
     const initialize = async () => {
       if (!editorRef.current) return;
       const {
@@ -252,6 +244,11 @@ const Editor: React.FC<EditorProps> = ({
       });
 
       const ytext = ydoc.getText("codemirror");
+
+      if (initialContent && initialContent.length > 0 && ytext.toString() === "") {
+        const textContent = new TextDecoder().decode(initialContent);
+        ytext.insert(0, textContent);
+      }
 
       const startState = EditorState.create({
         doc: ytext.toString(),
