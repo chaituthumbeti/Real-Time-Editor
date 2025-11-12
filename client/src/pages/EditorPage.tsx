@@ -22,9 +22,12 @@ const EditorPage = () => {
   const [documentFilename, setDocumentFilename] = useState<string | null>(null);
 
   // Resolve API base URL: use localhost during development, same-origin in production.
-  const apiURL = import.meta.env.DEV
-    ? "http://localhost:3001"
-    : `${location.protocol}//${location.host}`;
+  const apiURL =
+    import.meta.env.VITE_BACKEND_HTTP_URL ||
+    (import.meta.env.DEV
+      ? "http://localhost:3001"
+      : "https://real-time-editor-server-h96u.onrender.com");
+
   // Log resolved API URL at startup to help debug 404 -> frontend host routing
   console.log("[Editor] resolved apiURL =", apiURL);
 

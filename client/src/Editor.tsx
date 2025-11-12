@@ -11,22 +11,23 @@ import { WebsocketProvider } from "y-websocket";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { supabase } from "./supabaseClient";
+
 const serverURL =
-  import.meta.env.MODE === "development"
+  import.meta.env.VITE_BACKEND_WS_URL ||
+  (import.meta.env.MODE === "development"
     ? "ws://localhost:3001"
-    : "wss://real-time-editor-server-h96u.onrender.com";
+    : "wss://real-time-editor-server-h96u.onrender.com");
+
+const apiBase =
+  import.meta.env.VITE_BACKEND_HTTP_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:3001"
+    : "https://real-time-editor-server-h96u.onrender.com");
 
 function resolveApiBase(): string {
-  try {
-    if (import.meta.env && import.meta.env.DEV) {
-      return "http://localhost:3001";
-    }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  } catch (e) {
-    // ignore
-  }
-  return `${location.protocol}//${location.host}`;
+  return apiBase.replace(/\/$/, "");
 }
+
 console.log("[Editor DEBUG] api base resolver ->", resolveApiBase());
 
 interface StatusEvent {
