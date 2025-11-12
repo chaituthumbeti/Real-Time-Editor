@@ -3,6 +3,7 @@ import { supabase } from "../supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
+import { createDocument } from "../lib/createDocument";
 
 interface Document {
   id: string;
@@ -26,6 +27,9 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
   const [recentActivity, setRecentActivity] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDocumentTitle, setNewDocumentTitle] = useState("");
+  const [newDocumentLanguage, setNewDocumentLanguage] = useState("javascript");
+  const [newDocumentFilename, setNewDocumentFilename] = useState(""); // new
+  const [, setRecentDocs] = useState<Document[]>([]);
 
   // Function to fetch documents from the database
   const fetchDocuments = async () => {
@@ -54,14 +58,33 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
   };
 
   const fetchRecentActivity = async () => {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const { count, error } = await supabase
-      .from("documents")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", oneWeekAgo.toISOString());
-    if (error) console.error("Error fetching recent activity:", error);
-    else setRecentActivity(count || 0);
+    try {
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+      // fetch up to 5 recent docs created in the last 7 days and get exact count
+      const { data, count, error } = await supabase
+        .from("documents")
+        .select("id, title, created_at", { count: "exact" })
+        .gte("created_at", oneWeekAgo.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error("Error fetching recent activity:", error);
+        setRecentActivity(0);
+        setRecentDocs([]);
+        return;
+      }
+
+      // count may be null in some environments; fallback to data length
+      setRecentActivity(typeof count === "number" ? count : data?.length ?? 0);
+      setRecentDocs(data ?? []);
+    } catch (err) {
+      console.error("Unexpected error fetching recent activity:", err);
+      setRecentActivity(0);
+      setRecentDocs([]);
+    }
   };
 
   // Function to format date
@@ -94,31 +117,63 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
     }
   };
   const handleCreateDocument = async (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent default form submission
-    if (!newDocumentTitle.trim()) return; // Don't create if title is empty
+    e.preventDefault();
+    if (!newDocumentTitle.trim()) return;
 
     setCreating(true);
-    const { data, error } = await supabase
-      .from("documents")
-      .insert([
-        {
-          title: newDocumentTitle, // Use the title from the input
-          // user_id is set automatically by the default value in your Supabase table
-        },
-      ])
-      .select()
-      .single();
 
-    if (error) {
-      console.error("Error creating document:", error.message);
-    } else if (data) {
-      navigate(`/doc/${data.id}`); // Navigate to the new document
+    try {
+      // Use shared helper which attaches user_id, derives extension/filename etc.
+      const doc = await createDocument(
+        newDocumentTitle.trim(),
+        newDocumentLanguage,
+        newDocumentFilename?.trim() || undefined
+      );
+      if (doc?.id) {
+        navigate(`/doc/${doc.id}`);
+      } else {
+        console.error("createDocument returned unexpected payload:", doc);
+        alert("Failed to create document");
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("Error creating document:", errorMessage);
+      alert("Error creating document");
+    } finally {
+      setNewDocumentTitle("");
+      setNewDocumentLanguage("javascript");
+      setNewDocumentFilename("");
+      setShowCreateModal(false);
+      setCreating(false);
     }
-
-    setNewDocumentTitle("");
-    setShowCreateModal(false);
-    setCreating(false);
   };
+
+  // Delete a document by id (with confirmation)
+  const handleDeleteDocument = async (id: string) => {
+    if (!id) return;
+    const ok = window.confirm(
+      "Delete this document? This action cannot be undone."
+    );
+    if (!ok) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("documents").delete().eq("id", id);
+      if (error) {
+        console.error("Failed to delete document:", error);
+        alert("Failed to delete document");
+        return;
+      }
+      // refresh lists
+      await fetchDocuments();
+      await fetchRecentActivity();
+    } catch (err) {
+      console.error("Unexpected error deleting document:", err);
+      alert("Error deleting document");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchDocuments();
     fetchRegisteredUsers();
@@ -187,42 +242,16 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
                 <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
               </svg>
             ) : (
-              // Sun Icon for Dark Mode
+              // Sun Icon for Dark Mode (valid SVG)
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5"
                 viewBox="0 0 20 20"
                 fill="currentColor"
               >
-                <path
-                  fillRule="evenodd"
-                  d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 7.072l.707-.707a1 1 0 10-1.414-1.414l-.707.707a1 1 0 101.414 1.414zM3 11a1 1 0 100-2H2a1 1 0 100 2h1z"
-                  clipRule="evenodd"
-                />
+                <path d="M10 4a1 1 0 011 1v1a1 1 0 11-2 0V5a1 1 0 011-1zM10 13a3 3 0 100-6 3 3 0 000 6zM4 10a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm9.657-5.657a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM15.657 14.657a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM4.343 14.657a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM4.343 5.343a1 1 0 010-1.414L5.05 3.222A1 1 0 116.464 4.636L5.757 5.343a1 1 0 01-1.414 0z" />
               </svg>
             )}
-          </button>
-          <button
-            className={`p-2 rounded-lg transition-colors duration-200 ${
-              theme === "dark"
-                ? "hover:bg-slate-700/50 text-slate-300"
-                : "hover:bg-slate-200 text-slate-700"
-            }`}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-              />
-            </svg>
           </button>
           <div className="relative">
             <button
@@ -565,205 +594,103 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
               </svg>
             </div>
             <h3
-              className={`text-xl font-medium mb-2 ${
-                theme === "dark" ? "text-slate-200" : "text-slate-900"
+              className={`text-lg font-semibold mb-2 ${
+                theme === "dark" ? "text-slate-200" : "text-slate-800"
               }`}
             >
-              No documents yet
+              No documents found
             </h3>
             <p
-              className={`max-w-md mx-auto mb-6 ${
+              className={`text-sm ${
                 theme === "dark" ? "text-slate-400" : "text-slate-600"
               }`}
             >
-              Create your first document to start collaborating with your team
-              in real-time.
+              Create your first document by clicking the button above.
             </p>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              disabled={creating}
-              className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg font-medium text-white transition-all duration-200 shadow-lg inline-flex items-center space-x-2 disabled:opacity-70"
-            >
-              {creating ? (
-                <>
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                    />
-                  </svg>
-                  <span>Create Your First Document</span>
-                </>
-              )}
-            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {documents.map((doc) => (
               <div
                 key={doc.id}
-                onClick={() => navigate(`/doc/${doc.id}`)}
-                className={`rounded-xl p-6 hover:border-purple-500 transition-all duration-300 group cursor-pointer ${
+                className={`relative rounded-xl p-4 transition-all duration-300 ${
                   theme === "dark"
                     ? "bg-slate-800/50 backdrop-blur-sm border border-slate-700"
                     : "bg-white border border-slate-200 shadow-sm"
                 }`}
               >
-                <div className="flex justify-between items-start mb-4">
-                  <div
-                    className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-md ${
-                      theme === "dark"
-                        ? "bg-gradient-to-r from-purple-600/20 to-indigo-600/20"
-                        : "bg-gradient-to-r from-purple-100 to-indigo-100"
-                    }`}
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className={`h-6 w-6 ${
-                        theme === "dark" ? "text-purple-400" : "text-purple-600"
-                      }`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                  </div>
-                  <button
-                    className={`transition-opacity ${
-                      theme === "dark"
-                        ? "text-slate-500 hover:text-slate-300"
-                        : "text-slate-400 hover:text-slate-600"
-                    } opacity-0 group-hover:opacity-100`}
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-5 w-5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"
-                      />
-                    </svg>
-                  </button>
-                </div>
-                <h3
-                  className={`text-lg font-semibold mb-2 ${
-                    theme === "dark" ? "text-slate-100" : "text-slate-900"
-                  }`}
-                >
-                  {doc.title || "Untitled Document"}
-                </h3>
-                <div
-                  className={`flex items-center text-sm mb-4 ${
-                    theme === "dark" ? "text-slate-400" : "text-slate-500"
+                {/* small delete button top-right */}
+                <button
+                  onClick={() => handleDeleteDocument(doc.id)}
+                  title="Delete document"
+                  aria-label="Delete document"
+                  className={`absolute top-3 right-3 p-1.5 rounded-md transition-colors ${
+                    theme === "dark"
+                      ? "text-red-300 hover:bg-red-700/20"
+                      : "text-red-600 hover:bg-red-100"
                   }`}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 mr-1"
+                    className="h-4 w-4"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
+                    aria-hidden="true"
                   >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      d="M6 7h12M10 11v6m4-6v6M9 7l1-3h4l1 3"
                     />
                   </svg>
-                  <span>Created {formatDate(doc.created_at)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <div className="flex -space-x-2">
-                    <div
-                      className={`w-6 h-6 rounded-full border-2 ${
-                        theme === "dark"
-                          ? "bg-gradient-to-r from-indigo-500 to-purple-500 border-slate-800"
-                          : "bg-gradient-to-r from-indigo-500 to-purple-500 border-white"
+                </button>
+
+                <div className="flex flex-col h-full">
+                  <div className="flex-1">
+                    <h3
+                      className={`text-lg font-semibold mb-2 ${
+                        theme === "dark" ? "text-slate-200" : "text-slate-800"
                       }`}
-                    ></div>
-                    <div
-                      className={`w-6 h-6 rounded-full border-2 ${
-                        theme === "dark"
-                          ? "bg-gradient-to-r from-teal-500 to-cyan-500 border-slate-800"
-                          : "bg-gradient-to-r from-teal-500 to-cyan-500 border-white"
-                      }`}
-                    ></div>
-                    <div
-                      className={`w-6 h-6 rounded-full border-2 ${
-                        theme === "dark"
-                          ? "bg-gradient-to-r from-amber-500 to-orange-500 border-slate-800"
-                          : "bg-gradient-to-r from-amber-500 to-orange-500 border-white"
-                      }`}
-                    ></div>
-                  </div>
-                  <button
-                    className={`text-sm font-medium flex items-center transition-colors ${
-                      theme === "dark"
-                        ? "text-purple-400 hover:text-purple-300"
-                        : "text-purple-600 hover:text-purple-700"
-                    }`}
-                  >
-                    Open
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-4 w-4 ml-1"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                  </button>
+                      {doc.title}
+                    </h3>
+                    <p
+                      className={`text-sm ${
+                        theme === "dark" ? "text-slate-400" : "text-slate-600"
+                      }`}
+                    >
+                      {formatDate(doc.created_at)}
+                    </p>
+                  </div>
+                  <div className="mt-4 flex space-x-2">
+                    <button
+                      onClick={() => navigate(`/doc/${doc.id}`)}
+                      className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center space-x-2 ${
+                        theme === "dark"
+                          ? "bg-purple-600 text-white hover:bg-purple-700"
+                          : "bg-purple-100 text-purple-600 hover:bg-purple-200"
+                      }`}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                      <span>Open</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -771,50 +698,142 @@ const DashboardPage = ({ session }: DashboardPageProps) => {
         )}
       </main>
 
-      {/* Footer */}
-      <footer
-        className={`py-6 px-6 border-t text-center text-sm transition-colors duration-200 ${
-          theme === "dark"
-            ? "border-slate-800 text-slate-500"
-            : "border-slate-200 text-slate-500"
-        }`}
-      >
-        <p>© {new Date().getFullYear()} CodeCollab. All rights reserved.</p>
-      </footer>
+      {/* Create Document Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-20">
-          <div className="bg-slate-800 p-8 rounded-xl shadow-lg w-full max-w-md border border-slate-700">
-            <h2 className="text-2xl font-bold mb-6 text-white">
-              Create New Document
-            </h2>
+        <div
+          className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${
+            theme === "dark" ? "bg-black/80" : "bg-white/80"
+          }`}
+        >
+          <div
+            className={`w-full max-w-md rounded-xl p-6 transition-all duration-300 ${
+              theme === "dark"
+                ? "bg-slate-800 border border-slate-700"
+                : "bg-white border border-slate-200 shadow-lg"
+            }`}
+          >
+            <h3
+              className={`text-xl font-semibold mb-4 ${
+                theme === "dark" ? "text-slate-200" : "text-slate-800"
+              }`}
+            >
+              Create a New Document
+            </h3>
             <form onSubmit={handleCreateDocument}>
-              <div>
+              <div className="mb-4">
                 <label
-                  htmlFor="title"
-                  className="block text-sm font-medium text-slate-300 mb-2"
+                  htmlFor="document-title"
+                  className={`block text-sm font-medium mb-2 ${
+                    theme === "dark" ? "text-slate-300" : "text-slate-700"
+                  }`}
                 >
                   Document Title
                 </label>
                 <input
-                  id="title"
                   type="text"
+                  id="document-title"
                   value={newDocumentTitle}
                   onChange={(e) => setNewDocumentTitle(e.target.value)}
-                  placeholder="My awesome project"
-                  className="w-full px-3 py-3 bg-slate-700/50 border border-slate-600 rounded-lg text-white ..."
+                  className={`w-full p-3 rounded-lg border transition-all duration-200 ${
+                    theme === "dark"
+                      ? "bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400"
+                      : "bg-slate-100 border-slate-300 text-slate-900 placeholder-slate-600"
+                  }`}
+                  placeholder="Untitled Document"
                   required
                 />
               </div>
-              <div className="flex justify-end space-x-4 mt-8">
+              <div className="mb-4">
+                <label
+                  htmlFor="document-language"
+                  className={`block text-sm font-medium mb-2 ${
+                    theme === "dark" ? "text-slate-300" : "text-slate-700"
+                  }`}
+                >
+                  Programming Language
+                </label>
+                <select
+                  id="document-language"
+                  value={newDocumentLanguage}
+                  onChange={(e) => setNewDocumentLanguage(e.target.value)}
+                  className={`w-full p-3 rounded-lg border transition-all duration-200 ${
+                    theme === "dark"
+                      ? "bg-slate-700 border-slate-600 text-slate-200"
+                      : "bg-slate-100 border-slate-300 text-slate-900"
+                  }`}
+                >
+                  <option value="javascript">JavaScript</option>
+                  <option value="python">Python</option>
+                  <option value="cpp">C++</option>
+                  <option value="c">C</option>
+                  <option value="java">Java</option>
+                </select>
+              </div>
+              <div className="mb-6">
+                <label
+                  htmlFor="document-filename"
+                  className={`block text-sm font-medium mb-2 ${
+                    theme === "dark" ? "text-slate-300" : "text-slate-700"
+                  }`}
+                >
+                  File Name (optional)
+                </label>
+                <input
+                  type="text"
+                  id="document-filename"
+                  value={newDocumentFilename}
+                  onChange={(e) => setNewDocumentFilename(e.target.value)}
+                  className={`w-full p-3 rounded-lg border transition-all duration-200 ${
+                    theme === "dark"
+                      ? "bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400"
+                      : "bg-slate-100 border-slate-300 text-slate-900 placeholder-slate-600"
+                  }`}
+                  placeholder="e.g. my-document.js"
+                />
+              </div>
+              <div className="flex justify-end space-x-4">
                 <button
-                  type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="..."
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                    theme === "dark"
+                      ? "bg-slate-700 text-slate-200 hover:bg-slate-600"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
                 >
                   Cancel
                 </button>
-                <button type="submit" disabled={creating} className="...">
-                  {creating ? "Creating..." : "Create Document"}
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center space-x-2 ${
+                    creating
+                      ? "bg-indigo-600 text-white cursor-not-allowed"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                  }`}
+                >
+                  {creating ? (
+                    <svg
+                      className="animate-spin -ml-1 mr-2 h-5 w-5 text-white"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                  ) : null}
+                  <span>{creating ? "Creating..." : "Create Document"}</span>
                 </button>
               </div>
             </form>

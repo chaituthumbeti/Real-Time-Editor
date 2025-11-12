@@ -19,61 +19,163 @@ app.get('/health', (req, res) => {
   res.send('Server is healthy and awake!');
 });
 
+const LANGUAGE_IDS: Record<string, number> = {
+  javascript: 63,
+  js: 63,
+  python: 71,
+  py: 71,
+  cpp: 54,
+  'c++': 54,
+  c: 50,
+  java: 62,
+};
+
+function getLanguageId(lang: string): number {
+  const normalized = (lang || '').toLowerCase().trim();
+  return LANGUAGE_IDS[normalized] || 63; // default to JavaScript
+}
+
+// REST API endpoint for execution (using Judge0)
 app.post('/execute', async (req, res) => {
-  const { code } = req.body;
+  console.log('[Judge0] POST /execute received:', {
+    hasCode: !!req.body.code,
+    language: req.body.language,
+  });
+
+  const { code, language, stdin } = req.body;
 
   if (!code) {
-    return res.status(400).send('No code provided.');
-  }
-  
-  const apiKey = process.env.RAPIDAPI_KEY;
-  if (!apiKey) {
-    return res.status(500).send('API key is not configured on the server.');
+    return res.status(400).json({ error: 'No code provided.' });
   }
 
-  const options = {
-    method: 'POST',
-    url: 'https://judge0-ce.p.rapidapi.com/submissions',
-    params: { base64_encoded: 'false', fields: '*' },
-    headers: {
-      'content-type': 'application/json',
-      'X-RapidAPI-Key': apiKey,
-      'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com'
-    },
-    data: {
-      language_id: 63, // JavaScript
-      source_code: code,
-    }
-  };
+  const languageId = getLanguageId(language);
+  const rapidApiKey = process.env.RAPIDAPI_KEY;
+
+  if (!rapidApiKey) {
+    return res.status(500).json({ error: 'RAPIDAPI_KEY not configured' });
+  }
 
   try {
-    const response = await axios.request(options);
-    const token = response.data.token;
+    console.log(`[Judge0] Submitting code (languageId: ${languageId})...`);
 
-    setTimeout(async () => {
-      try {
-        const resultResponse = await axios.get(`https://judge0-ce.p.rapidapi.com/submissions/${token}`, {
-          headers: {
-            'X-RapidAPI-Key': apiKey,
-            'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com'
-          }
-        });
-        res.send(resultResponse.data);
-      } catch (error) {
-        res.status(500).send('Error getting execution result.');
+    // Step 1: Submit code to Judge0
+    const submitResponse = await axios.post(
+      'https://judge0-ce.p.rapidapi.com/submissions',
+      {
+        language_id: languageId,
+        source_code: code,
+        stdin: stdin || '',
+      },
+      {
+        headers: {
+          'content-type': 'application/json',
+          'X-RapidAPI-Key': rapidApiKey,
+          'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com',
+        },
+        timeout: 10000,
       }
-    }, 3000); // Increased timeout to 3 seconds
+    );
 
-  } catch (error) {
-    res.status(500).send('Error executing code.');
+    const token = submitResponse.data.token;
+    console.log(`[Judge0] Submission token: ${token}`);
+
+    // Step 2: Poll for result
+    let result = null;
+    let attempts = 0;
+    const maxAttempts = 30; // ~30 seconds with 1s delays
+
+    while (attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
+
+      const statusResponse = await axios.get(
+        `https://judge0-ce.p.rapidapi.com/submissions/${token}`,
+        {
+          headers: {
+            'X-RapidAPI-Key': rapidApiKey,
+            'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com',
+          },
+        }
+      );
+
+      result = statusResponse.data;
+
+      if (result.status.id > 2) {
+        // Status > 2 means execution finished
+        console.log(`[Judge0] Execution completed with status: ${result.status.description}`);
+        break;
+      }
+
+      attempts++;
+    }
+
+    if (!result || result.status.id <= 2) {
+      return res.status(408).json({ error: 'Execution timeout' });
+    }
+
+    // Step 3: Return result
+    const response = {
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      compile_output: result.compile_output || '',
+      exit_code: result.exit_code || 0,
+    };
+
+    res.json(response);
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Judge0] Execution error:', errorMsg);
+    res.status(500).json({
+      error: 'Execution failed',
+      details: errorMsg,
+    });
   }
 });
 
-const wss = new WebSocketServer({ server });
-
+// WebSocket for document collaboration (Yjs)
+const wss = new WebSocketServer({ noServer: true });
 wss.on('connection', (conn, req) => {
-  const roomName = req.url?.slice(1).split('?')[0];
-  setupWSConnection(conn, req, { docName: roomName });
+  const rawUrl = req.url || '';
+  const tokenMatch = rawUrl.match(/[?&]token=([^&]+)/);
+  let token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : undefined;
+
+  const pathPart = rawUrl.split('?')[0] || '/';
+  let roomName = pathPart !== '/' && pathPart.length > 1 ? pathPart.slice(1) : '';
+
+  if (!roomName && token && token.includes('/')) {
+    const parts = token.split('/');
+    token = parts.shift();
+    roomName = parts.join('/') || '';
+  }
+
+  if (!token) {
+    console.error('Connection rejected: No token provided');
+    conn.close(1011, 'No token provided');
+    return;
+  }
+
+  try {
+    console.log(`Connection accepted for room "${roomName}" with token provided.`);
+    setupWSConnection(conn, req, { docName: roomName || undefined });
+  } catch (error) {
+    console.error('Token verification / connection setup failed:', error);
+    conn.close(1011, 'Invalid token');
+  }
+});
+
+// Upgrade HTTP to WebSocket
+server.on('upgrade', (req, ws, head) => {
+  console.log('[Upgrade] URL:', req.url);
+
+  const tokenMatch = req.url?.match(/[?&]token=([^&]+)/);
+  if (!tokenMatch) {
+    console.error('[Upgrade] Connection rejected: No token provided for', req.url);
+    ws.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, ws as any, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
 });
 
 server.listen(PORT, () => {

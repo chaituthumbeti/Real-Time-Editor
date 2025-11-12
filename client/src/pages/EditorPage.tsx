@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 import Editor from "../Editor";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
 
 const EditorPage = () => {
@@ -14,23 +14,72 @@ const EditorPage = () => {
   >("connecting");
   const [showUserMenu, setShowUserMenu] = useState(false);
   const navigate = useNavigate();
+  const { docId } = useParams<{ docId: string }>();
+  const [documentTitle, setDocumentTitle] = useState("Loading...");
+  const [initialContent, setInitialContent] = useState<Uint8Array | null>(null);
+  const [documentLanguage, setDocumentLanguage] =
+    useState<string>("javascript");
+  const [documentFilename, setDocumentFilename] = useState<string | null>(null);
+
+  // Resolve API base URL: use localhost during development, same-origin in production.
+  const apiURL = import.meta.env.DEV
+    ? "http://localhost:3001"
+    : `${location.protocol}//${location.host}`;
+  // Log resolved API URL at startup to help debug 404 -> frontend host routing
+  console.log("[Editor] resolved apiURL =", apiURL);
 
   useEffect(() => {
     // This function checks if a user is logged in
-    const checkSession = async () => {
+    const checkSessionAndFetchDoc = async () => {
+      setLoading(true);
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) {
         // If no user is logged in, redirect to the homepage
         navigate("/");
-      } else {
-        setSession(session);
+        return;
+      }
+      setSession(session);
+      if (!docId) {
+        navigate("/");
+        return;
+      }
+
+      async function loadDocument(docId: string) {
+        const { data, error } = await supabase
+          .from("documents")
+          .select("id, content, title, language, filename, extension") // include filename + extension
+          .eq("id", docId)
+          .single();
+        if (error) throw error;
+        const initialContent = data.content
+          ? new TextEncoder().encode(data.content)
+          : new Uint8Array();
+        return { ...data, initialContent };
+      }
+
+      try {
+        const {
+          initialContent: ic,
+          title,
+          language,
+          filename,
+        } = await loadDocument(docId);
+        setDocumentTitle(title || "Untitled Document");
+        setInitialContent(ic);
+        setDocumentLanguage(language || "javascript");
+        // pass filename to editor
+        setDocumentFilename(filename || null); // <-- call directly
+      } catch (err) {
+        console.error("Failed to load document", err);
+        navigate("/");
+      } finally {
         setLoading(false);
       }
     };
-    checkSession();
-  }, [navigate]);
+    checkSessionAndFetchDoc();
+  }, [navigate, docId]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -58,8 +107,8 @@ const EditorPage = () => {
       {/* Header */}
       <header className="bg-slate-100 dark:bg-slate-800 shadow-lg py-3 px-6 flex justify-between items-center border-b border-slate-200 dark:border-slate-700 transition-colors duration-200">
         {/* Logo and Title */}
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-12">
+          <div className="flex items-center space-x-4">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center shadow-md transform transition-all duration-300 hover:scale-110">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -76,28 +125,36 @@ const EditorPage = () => {
                 />
               </svg>
             </div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
               CodeCollab
             </h1>
           </div>
-          {/* Connection Status */}
-          <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-200 dark:bg-slate-700/50 rounded-lg backdrop-blur-sm transition-colors duration-200">
-            <div
-              className={`w-2.5 h-2.5 rounded-full ${
-                connectionStatus === "connected"
-                  ? "bg-green-500 animate-pulse"
+
+          <div className="flex items-center space-x-4">
+            <div>
+              <h1 className="text-lg font-medium text-gray-800 dark:text-gray-200 tracking-wide">
+                {documentTitle}
+              </h1>
+            </div>
+            {/* Connection Status */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-200 dark:bg-slate-700/50 rounded-lg backdrop-blur-sm transition-colors duration-200">
+              <div
+                className={`w-2.5 h-2.5 rounded-full ${
+                  connectionStatus === "connected"
+                    ? "bg-green-500 animate-pulse"
+                    : connectionStatus === "connecting"
+                    ? "bg-yellow-500"
+                    : "bg-red-500"
+                }`}
+              ></div>
+              <span className="text-sm text-slate-700 dark:text-slate-300">
+                {connectionStatus === "connected"
+                  ? "Connected"
                   : connectionStatus === "connecting"
-                  ? "bg-yellow-500"
-                  : "bg-red-500"
-              }`}
-            ></div>
-            <span className="text-sm text-slate-700 dark:text-slate-300">
-              {connectionStatus === "connected"
-                ? "Connected"
-                : connectionStatus === "connecting"
-                ? "Connecting..."
-                : "Disconnected"}
-            </span>
+                  ? "Connecting..."
+                  : "Disconnected"}
+              </span>
+            </div>
           </div>
         </div>
         {/* User Menu */}
@@ -195,10 +252,17 @@ const EditorPage = () => {
       </header>
       {/* Editor Container */}
       <div className="flex-1 bg-white dark:bg-slate-900 transition-colors duration-200">
-        <Editor
-          onConnectionStatusChange={handleConnectionStatusChange}
-          theme={theme}
-        />
+        {initialContent !== null && docId && (
+          <Editor
+            docId={docId}
+            initialContent={initialContent}
+            title={documentTitle}
+            language={documentLanguage} // pass the stored language
+            filename={documentFilename || undefined}
+            onConnectionStatusChange={handleConnectionStatusChange}
+            theme={theme}
+          />
+        )}
       </div>
     </div>
   );
