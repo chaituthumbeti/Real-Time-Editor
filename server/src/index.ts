@@ -19,6 +19,19 @@ app.get('/health', (req, res) => {
   res.send('Server is healthy and awake!');
 });
 
+// Add root route
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Real-Time Editor Server',
+    endpoints: {
+      health: '/health',
+      execute: 'POST /execute',
+      collaboration: 'WS /{docId}?token={token}',
+    }
+  });
+});
+
 const LANGUAGE_IDS: Record<string, number> = {
   javascript: 63,
   js: 63,
