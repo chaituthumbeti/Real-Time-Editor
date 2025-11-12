@@ -11,8 +11,10 @@ import { WebsocketProvider } from "y-websocket";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { supabase } from "./supabaseClient";
-
-const serverURL = "ws://localhost:3001";
+const serverURL =
+  import.meta.env.MODE === "development"
+    ? "ws://localhost:3001"
+    : "wss://real-time-editor-server-h96u.onrender.com";
 
 function resolveApiBase(): string {
   try {
