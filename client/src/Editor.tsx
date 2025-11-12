@@ -13,8 +13,6 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { supabase } from "./supabaseClient";
 
 const serverURL = "ws://localhost:3001";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const EXECUTION_WS_URL = "ws://localhost:3001/execute-ws";
 
 function resolveApiBase(): string {
   try {
@@ -72,15 +70,6 @@ const lightTheme = EditorView.theme({
 
 const themeCompartment = new Compartment();
 const languageCompartment = new Compartment();
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const LANGUAGE_IDS = {
-  javascript: 63,
-  python: 71,
-  cpp: 54,
-  c: 50,
-  java: 62,
-} as const;
 
 function getLangExtension(lang: string) {
   switch ((lang || "").toLowerCase()) {
@@ -144,8 +133,7 @@ const Editor: React.FC<EditorProps> = ({
   const [isRunning, setIsRunning] = useState(false);
   const [stdinInput, setStdinInput] = useState<string>("");
   const [showInputModal, setShowInputModal] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const executionWsRef = useRef<WebSocket | null>(null);
+
   const editorRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<EditorView | null>(null);
 
