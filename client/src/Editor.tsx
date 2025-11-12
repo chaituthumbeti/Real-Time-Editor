@@ -243,12 +243,16 @@ const Editor: React.FC<EditorProps> = ({
         color: userColor,
       });
 
-      const ytext = ydoc.getText("codemirror");
-
-      if (initialContent && initialContent.length > 0 && ytext.toString() === "") {
-        const textContent = new TextDecoder().decode(initialContent);
-        ytext.insert(0, textContent);
+      // ✅ Properly load Yjs binary data from Supabase
+      if (initialContent && initialContent.length > 0) {
+        try {
+          Y.applyUpdate(ydoc, new Uint8Array(initialContent));
+        } catch (err) {
+          console.error("Failed to apply Yjs update:", err);
+        }
       }
+
+      const ytext = ydoc.getText("codemirror");
 
       const startState = EditorState.create({
         doc: ytext.toString(),
